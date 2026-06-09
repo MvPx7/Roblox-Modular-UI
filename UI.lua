@@ -1,4 +1,4 @@
--- UI.lua  v2.1  ─ Responsivo + Drag-safe + Quest Tab
+-- UI.lua  v2.2  ─ Responsivo + Drag-safe + Quest como módulo externo
 -- ══════════════════════════════════════════════════════════════════════════════
 
 local GITHUB_RAW = "https://raw.githubusercontent.com/MvPx7/Roblox-Modular-UI/main/Modules/"
@@ -25,7 +25,6 @@ local function getPlatform()
     elseif touch and short >= 600 and long >= 900 then
         return "Tablet"
     else
-        -- mobile nativo OU executor mobile (tela pequena com ou sem touch)
         return "Mobile"
     end
 end
@@ -54,12 +53,15 @@ local T = {
     CORNER  = UDim.new(0, 10),
 }
 
+-- ══════════════════════════════════════════════════════════════════════════════
+--  TABS  ─ Quest agora é módulo externo igual aos outros
+-- ══════════════════════════════════════════════════════════════════════════════
 local TABS = {
     { name = "Home",    module = "HomeTab"   },
     { name = "NPC",     module = "NPCTab"    },
     { name = "Player",  module = "PlayerTab" },
     { name = "Visual",  module = "VisualTab" },
-    { name = "Quest",   module = nil         },  -- built-in, sem módulo externo
+    { name = "Quest",   module = "QuestTab"  },  -- agora módulo externo
     { name = "Config",  module = "ConfigTab" },
 }
 
@@ -119,419 +121,6 @@ local function loadModule(name, errorFrame)
 end
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  QUEST TAB  (built-in, integra a lógica do QuestHelper)
--- ══════════════════════════════════════════════════════════════════════════════
-local QUEST_MAP = {
-    ["DragonHollow"]      = { path = "Workspace.DialogueInteractables.DragonHollowQuest_BaseRemedy",  label = "Dragon Hollow Quest" },
-    ["MissingParty"]      = { path = "Workspace.DialogueInteractables.MissingPartyQuest",              label = "Missing Party Quest" },
-    ["PowerControl"]      = { path = "Workspace.DialogueInteractables.PowerControlQuest",              label = "Power Control Quest" },
-    ["OutskirtsWW"]       = { path = "Workspace.DialogueInteractables.OutskirtsWWQuest",               label = "Outskirts WW Quest" },
-    ["MiscSkilltree"]     = { path = "Workspace.DialogueInteractables.MiscSkilltreeQuest",             label = "Skilltree Quest" },
-    ["Ointment"]          = { path = "Workspace.DialogueInteractables.OintmentQuest",                  label = "Ointment Quest" },
-    ["Aura"]              = { path = "Workspace.DialogueInteractables.AuraQuest",                      label = "Aura Quest" },
-    ["OneHandStance"]     = { path = "Workspace.DialogueInteractables.OneHandStanceQuest",             label = "One Hand Stance Quest" },
-    ["Respirator"]        = { path = "Workspace.DialogueInteractables.RespiratorQuest",                label = "Respirator Quest" },
-    ["OutskirtsStatue"]   = { path = "Workspace.DialogueInteractables.OutskirtsStatueQuest",           label = "Statue Quest" },
-    ["MissionTicket"]     = { path = "Workspace.DialogueInteractables.OutskirtsMissionTicketQuest",    label = "Mission Ticket Quest" },
-    ["SpiritAlloy"]       = { path = "Workspace.DialogueInteractables.SpiritAlloyQuest",               label = "Spirit Alloy Quest" },
-    ["SparringArena"]     = { path = "Workspace.DialogueInteractables.SparringArenaQuest",             label = "Sparring Arena Quest" },
-    ["FirstErrand"]       = { path = "Workspace.DialogueInteractables.FirstErrandClassQuestNPC",       label = "First Errand Quest" },
-    ["GreyHunter"]        = { path = "Workspace.DialogueInteractables.GreyHunterQuest",                label = "Grey Hunter Quest" },
-    ["KillMenos"]         = { path = "Workspace.DialogueInteractables.KillMenosQuest",                 label = "Kill Menos Quest" },
-    ["Nindus"]            = { path = "Workspace.DialogueInteractables.NindusQuest",                    label = "Nindus Quest" },
-    ["InvasionOutskirts"] = { path = "Workspace.DialogueInteractables.InvasionQuestOutskirts",         label = "Invasion Quest" },
-    ["Dragonfly"]         = { path = "Workspace.DialogueInteractables.DragonflyQuestOutskirts",        label = "Dragonfly Quest" },
-    ["CapturePoint"]      = { path = "Workspace.DialogueInteractables.CapturePointQuest",              label = "Capture Point Quest" },
-    ["HuecoEntrance"]     = { path = "Workspace.DialogueInteractables.HuecoEntranceQuest",             label = "Hueco Entrance Quest" },
-    ["MaskedWarrior"]     = { path = "Workspace.DialogueInteractables.MaskedWarriorQuest",             label = "Masked Warrior Quest" },
-    ["BatHollow"]         = { path = "Workspace.DialogueInteractables.BatHollowTip",                   label = "Bat Hollow Quest" },
-    ["DrVoris"]           = { path = "Workspace.DialogueInteractables.DrVoris",                        label = "Dr. Voris" },
-    ["Miello"]            = { path = "Workspace.DialogueInteractables.Miello",                         label = "Miello" },
-    ["Hale"]              = { path = "Workspace.DialogueInteractables.Hale",                           label = "Hale" },
-    ["Smeek"]             = { path = "Workspace.DialogueInteractables.Smeek",                          label = "Smeek" },
-    ["MizukiSato"]        = { path = "Workspace.DialogueInteractables.MizukiSatoElder",                label = "Mizuki Sato (Elder)" },
-    ["SweetwaterLeader"]  = { path = "Workspace.DialogueInteractables.SweetwaterLeader",               label = "Sweetwater Leader" },
-    ["Scorpion"]          = { path = "Workspace.Debris.ScorpionQuestMarker",                           label = "Scorpion Location" },
-    ["Mantis"]            = { path = "Workspace.Debris.MantisQuestMarker",                             label = "Mantis Location" },
-    ["GiantDragonfly"]    = { path = "Workspace.Debris.GiantDragonflyQuestMarker",                     label = "Giant Dragonfly Location" },
-    ["StrangeCave"]       = { path = "Workspace.Debris.StrangeCaveMarker",                             label = "Strange Cave" },
-    ["MissingCousin"]     = { path = "Workspace.Debris.MissingCounsinQuestMarker",                     label = "Missing Cousin Location" },
-    ["Necklace"]          = { path = "Workspace.Debris.NecklaceMarker",                                label = "Necklace Location" },
-    ["Lizard"]            = { path = "Workspace.Debris.LizardQuestMarker",                             label = "Lizard Location" },
-    ["Shipment"]          = { path = "Workspace.Debris.ShipmentMarker",                                label = "Shipment Location" },
-    ["OutskirtsWWMarker"] = { path = "Workspace.Debris.OutskirtsWWQuestMarker",                        label = "WW Target Location" },
-    ["DragonflyMarker"]   = { path = "Workspace.Debris.DragonflyQuestMarker",                         label = "Dragonfly Location" },
-    ["PowerControlMarker"]= { path = "Workspace.Debris.PowerControlQuestMarker",                      label = "Power Control Location" },
-    ["MizumiVillage"]     = { path = "Workspace.Debris.MizumiVillageMarker",                          label = "Mizumi Village" },
-    ["NebukaiVillage"]    = { path = "Workspace.Debris.NebukaiVillageMarker",                         label = "Nebukai Village" },
-    ["BatQuest"]          = { path = "Workspace.Debris.BatQuestMarker",                               label = "Bat Location" },
-}
-
-local QuestState = {
-    activeHighlight = nil,
-    activeBillboard = nil,
-    targetObj       = nil,
-}
-
-local function questResolvePath(pathStr)
-    local parts = string.split(pathStr, ".")
-    local obj = game
-    for _, part in ipairs(parts) do
-        obj = obj:FindFirstChild(part)
-        if not obj then return nil end
-    end
-    return obj
-end
-
-local function questGetRootPart(obj)
-    if not obj then return nil end
-    if obj:IsA("Model") then
-        return obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-    elseif obj:IsA("BasePart") then
-        return obj
-    end
-    return nil
-end
-
-local function questClearMarker()
-    if QuestState.activeHighlight then
-        QuestState.activeHighlight:Destroy()
-        QuestState.activeHighlight = nil
-    end
-    if QuestState.activeBillboard then
-        QuestState.activeBillboard:Destroy()
-        QuestState.activeBillboard = nil
-    end
-    QuestState.targetObj = nil
-end
-
-local function questApplyMarker(obj, label)
-    questClearMarker()
-    local root = questGetRootPart(obj) or obj
-    if not root then return end
-    QuestState.targetObj = obj
-
-    -- Highlight
-    local hl = Instance.new("Highlight")
-    hl.FillColor    = Color3.fromRGB(255, 200, 0)
-    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-    hl.FillTransparency    = 0.5
-    hl.OutlineTransparency = 0
-    hl.Adornee = root
-    hl.Parent  = root
-    QuestState.activeHighlight = hl
-
-    -- BillboardGui
-    local bb = Instance.new("BillboardGui")
-    bb.Size         = UDim2.fromOffset(180, 50)
-    bb.StudsOffset  = Vector3.new(0, 3, 0)
-    bb.AlwaysOnTop  = true
-    bb.Adornee      = root
-    bb.Parent       = root
-    QuestState.activeBillboard = bb
-
-    local bg = mk("Frame", {
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(12, 12, 18),
-        BackgroundTransparency = 0.3,
-        Parent = bb,
-    })
-    corner(bg, UDim.new(0, 6))
-
-    mk("TextLabel", {
-        Size = UDim2.new(1, -8, 0.6, 0),
-        Position = UDim2.fromOffset(4, 3),
-        BackgroundTransparency = 1,
-        Text = label or obj.Name,
-        TextColor3 = Color3.fromRGB(255, 230, 80),
-        Font = Enum.Font.GothamBold,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Parent = bg,
-    })
-
-    local distL = mk("TextLabel", {
-        Name = "DistLabel",
-        Size = UDim2.new(1, -8, 0.4, 0),
-        Position = UDim2.new(0, 4, 0.6, 0),
-        BackgroundTransparency = 1,
-        Text = "...",
-        TextColor3 = Color3.fromRGB(180, 180, 220),
-        Font = Enum.Font.Gotham,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Parent = bg,
-    })
-
-    -- Atualiza distância
-    task.spawn(function()
-        while QuestState.activeBillboard and QuestState.activeBillboard.Parent do
-            local char = LP.Character
-            if char then
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                local rp  = questGetRootPart(obj)
-                if hrp and rp then
-                    local d = math.floor((hrp.Position - rp.Position).Magnitude)
-                    distL.Text = d .. " studs"
-                end
-            end
-            task.wait(0.15)
-        end
-    end)
-end
-
--- Constrói a aba Quest dentro de um frame pai
-local function buildQuestTab(parent)
-    -- scroll container
-    local scroll = mk("ScrollingFrame", {
-        Size = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = T.ACCENT,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        Parent = parent,
-    })
-    mk("UIPadding", {
-        PaddingTop    = UDim.new(0, 6),
-        PaddingLeft   = UDim.new(0, 8),
-        PaddingRight  = UDim.new(0, 8),
-        PaddingBottom = UDim.new(0, 6),
-        Parent = scroll,
-    })
-    mk("UIListLayout", {
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding   = UDim.new(0, 5),
-        Parent    = scroll,
-    })
-
-    -- Status display
-    local statusRow = mk("Frame", {
-        Size = UDim2.new(1, 0, 0, 28),
-        BackgroundColor3 = T.SURFACE,
-        LayoutOrder = 0,
-        Parent = scroll,
-    })
-    corner(statusRow, UDim.new(0, 6))
-    local statusDot = mk("Frame", {
-        Size = UDim2.fromOffset(8, 8),
-        Position = UDim2.new(0, 8, 0.5, -4),
-        BackgroundColor3 = T.SUBTEXT,
-        BorderSizePixel = 0,
-        Parent = statusRow,
-    })
-    corner(statusDot, UDim.new(1, 0))
-    local statusLbl = mk("TextLabel", {
-        Size = UDim2.new(1, -26, 1, 0),
-        Position = UDim2.fromOffset(22, 0),
-        BackgroundTransparency = 1,
-        Text = "Nenhuma quest ativa",
-        TextColor3 = T.SUBTEXT,
-        Font = T.FONT,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = statusRow,
-    })
-
-    -- Info rows helper
-    local function infoRow(order, label, defaultVal)
-        local row = mk("Frame", {
-            Size = UDim2.new(1, 0, 0, 24),
-            BackgroundTransparency = 1,
-            LayoutOrder = order,
-            Parent = scroll,
-        })
-        mk("TextLabel", {
-            Size = UDim2.new(0.42, 0, 1, 0),
-            BackgroundTransparency = 1,
-            Text = label,
-            TextColor3 = T.SUBTEXT,
-            Font = T.FONT,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = row,
-        })
-        local val = mk("TextLabel", {
-            Size = UDim2.new(0.58, 0, 1, 0),
-            Position = UDim2.fromScale(0.42, 0),
-            BackgroundTransparency = 1,
-            Text = defaultVal or "—",
-            TextColor3 = T.TEXT,
-            Font = T.FONTB,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            Parent = row,
-        })
-        return val
-    end
-
-    -- Separator helper
-    local function sep(order)
-        local s = mk("Frame", {
-            Size = UDim2.new(1, 0, 0, 1),
-            BackgroundColor3 = T.BORDER,
-            BorderSizePixel = 0,
-            LayoutOrder = order,
-            Parent = scroll,
-        })
-        return s
-    end
-
-    local valQuest  = infoRow(1,  "Quest:",     "—")
-    local valTarget = infoRow(2,  "Alvo:",      "—")
-    local valDist   = infoRow(3,  "Distância:", "—")
-    sep(4)
-
-    -- Botões de ação
-    local function actionBtn(order, txt, color)
-        local btn = mk("TextButton", {
-            Size = UDim2.new(1, 0, 0, 26),
-            BackgroundColor3 = color or T.ACCENT,
-            Text = txt,
-            TextColor3 = T.TEXT,
-            Font = T.FONTB,
-            TextSize = 11,
-            BorderSizePixel = 0,
-            AutoButtonColor = false,
-            LayoutOrder = order,
-            Parent = scroll,
-        })
-        corner(btn, UDim.new(0, 6))
-        btn.MouseEnter:Connect(function() tw(btn, 0.1, {BackgroundTransparency = 0.3}) end)
-        btn.MouseLeave:Connect(function() tw(btn, 0.1, {BackgroundTransparency = 0}) end)
-        return btn
-    end
-
-    local btnClear   = actionBtn(5, "✕  Limpar Marcador",  Color3.fromRGB(140, 40, 40))
-    sep(6)
-
-    -- Lista de quests
-    local listLabel = mk("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 18),
-        BackgroundTransparency = 1,
-        Text = "QUESTS DISPONÍVEIS",
-        TextColor3 = T.SUBTEXT,
-        Font = T.FONTB,
-        TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = 7,
-        Parent = scroll,
-    })
-
-    -- Ordena as quests pelo label
-    local sortedQuests = {}
-    for k, v in pairs(QUEST_MAP) do
-        table.insert(sortedQuests, { key = k, data = v })
-    end
-    table.sort(sortedQuests, function(a, b) return a.data.label < b.data.label end)
-
-    local activeKey = nil
-
-    for idx, entry in ipairs(sortedQuests) do
-        local k, v = entry.key, entry.data
-        local row = mk("TextButton", {
-            Size = UDim2.new(1, 0, 0, 26),
-            BackgroundColor3 = T.SURFACE,
-            Text = "",
-            BorderSizePixel = 0,
-            AutoButtonColor = false,
-            LayoutOrder = 7 + idx,
-            Parent = scroll,
-        })
-        corner(row, UDim.new(0, 5))
-
-        local dot = mk("Frame", {
-            Size = UDim2.fromOffset(6, 6),
-            Position = UDim2.new(0, 8, 0.5, -3),
-            BackgroundColor3 = T.SUBTEXT,
-            BorderSizePixel = 0,
-            Parent = row,
-        })
-        corner(dot, UDim.new(1, 0))
-
-        mk("TextLabel", {
-            Size = UDim2.new(1, -26, 1, 0),
-            Position = UDim2.fromOffset(22, 0),
-            BackgroundTransparency = 1,
-            Text = v.label,
-            TextColor3 = T.TEXT,
-            Font = T.FONT,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            Parent = row,
-        })
-
-        row.MouseEnter:Connect(function()
-            if activeKey ~= k then
-                tw(row, 0.1, {BackgroundColor3 = T.BORDER})
-            end
-        end)
-        row.MouseLeave:Connect(function()
-            if activeKey ~= k then
-                tw(row, 0.1, {BackgroundColor3 = T.SURFACE})
-            end
-        end)
-
-        row.Activated:Connect(function()
-            -- Deseleciona anterior visualmente
-            activeKey = k
-
-            -- Resolve e aplica
-            local obj = questResolvePath(v.path)
-            if obj then
-                questApplyMarker(obj, v.label)
-                dot.BackgroundColor3 = T.SUCCESS
-                statusDot.BackgroundColor3 = T.SUCCESS
-                statusLbl.Text = v.label
-                valQuest.Text  = v.label
-                valTarget.Text = obj.Name
-                tw(row, 0.1, {BackgroundColor3 = Color3.fromRGB(30, 50, 35)})
-            else
-                questClearMarker()
-                dot.BackgroundColor3 = T.ERR
-                statusDot.BackgroundColor3 = T.ERR
-                statusLbl.Text = "Objeto não encontrado"
-                valQuest.Text  = v.label
-                valTarget.Text = "— não encontrado —"
-                valDist.Text   = "—"
-                tw(row, 0.1, {BackgroundColor3 = Color3.fromRGB(50, 20, 20)})
-            end
-        end)
-    end
-
-    -- Distância loop
-    task.spawn(function()
-        while parent.Parent do
-            if QuestState.targetObj then
-                local char = LP.Character
-                if char then
-                    local hrp = char:FindFirstChild("HumanoidRootPart")
-                    local rp  = questGetRootPart(QuestState.targetObj)
-                    if hrp and rp then
-                        local d = math.floor((hrp.Position - rp.Position).Magnitude)
-                        valDist.Text = d .. " studs"
-                    end
-                end
-            end
-            task.wait(0.2)
-        end
-    end)
-
-    -- Limpar
-    btnClear.Activated:Connect(function()
-        questClearMarker()
-        activeKey = nil
-        statusDot.BackgroundColor3 = T.SUBTEXT
-        statusLbl.Text = "Nenhuma quest ativa"
-        valQuest.Text  = "—"
-        valTarget.Text = "—"
-        valDist.Text   = "—"
-    end)
-end
-
--- ══════════════════════════════════════════════════════════════════════════════
 --  SCREENGU  +  JANELA
 -- ══════════════════════════════════════════════════════════════════════════════
 local SG = mk("ScreenGui", {
@@ -541,7 +130,6 @@ local SG = mk("ScreenGui", {
     Parent          = PlayerGui,
 })
 
--- Tamanhos iniciais (serão recalculados pelo sistema responsivo)
 local plat = getPlatform()
 local cfg  = PLATFORM_CFG[plat]
 local WIN_W = cfg.WIN_W
@@ -582,7 +170,7 @@ local Header = mk("Frame", {
     Parent           = Window,
 })
 corner(Header)
-mk("Frame", {    -- cobre canto inferior do header
+mk("Frame", {
     Size             = UDim2.new(1, 0, 0, 10),
     Position         = UDim2.new(0, 0, 1, -10),
     BackgroundColor3 = T.SURFACE,
@@ -601,7 +189,7 @@ mk("TextLabel", {
     Parent             = Header,
 })
 
--- ── Botão Toggle (fixo no SG, sempre visível) ─────────────────────────────────
+-- ── Botão Toggle ──────────────────────────────────────────────────────────────
 local BTN_SZ  = cfg.BTN
 local BTN_PAD = 8
 local ToggleBtn = mk("TextButton", {
@@ -702,10 +290,7 @@ for i, td in ipairs(TABS) do
     })
     tabFrames[td.name] = frm
 
-    if td.name == "Quest" then
-        -- aba built-in
-        buildQuestTab(frm)
-    elseif td.module then
+    if td.module then
         local mod = loadModule(td.module, frm)
         if mod and mod.Init then
             pcall(mod.Init, frm, T)
@@ -727,7 +312,6 @@ local function setMin(s)
     Window.Visible                  = not s
     ToggleBtn.Text                  = s and "✦" or "×"
     ToggleBtn.BackgroundColor3      = s and T.ACCENT or Color3.fromRGB(80, 30, 30)
-    -- ao restaurar, garante que a janela está dentro da tela
     if not s then
         local px = Window.Position.X.Offset
         local py = Window.Position.Y.Offset
@@ -791,7 +375,6 @@ do
             moveDrag(i.Position)
         end
     end)
-    -- Garante que drag cancela se soltar fora do header
     UIS.InputEnded:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
         or i.UserInputType == Enum.UserInputType.Touch then
@@ -807,7 +390,6 @@ local lastPlat = plat
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
     local newPlat = getPlatform()
     if newPlat == lastPlat then
-        -- Mesma plataforma: apenas reclamp a posição
         local px = Window.Position.X.Offset
         local py = Window.Position.Y.Offset
         local nx, ny = clampWindowPos(px, py, WIN_W, WIN_H)
@@ -815,7 +397,6 @@ workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(functio
         return
     end
 
-    -- Plataforma mudou: reconfigura tamanhos
     lastPlat = newPlat
     local nc = PLATFORM_CFG[newPlat]
     WIN_W = nc.WIN_W
@@ -831,13 +412,11 @@ workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(functio
     ContentArea.Size     = UDim2.new(1, 0, 1, -newOffset)
     ContentArea.Position = UDim2.fromOffset(0, newOffset)
 
-    -- Clamp para nova viewport
     local px = Window.Position.X.Offset
     local py = Window.Position.Y.Offset
     local nx, ny = clampWindowPos(px, py, WIN_W, WIN_H)
     Window.Position = UDim2.fromOffset(nx, ny)
 
-    -- Ajusta botões flutuantes
     ToggleBtn.Size = UDim2.fromOffset(nc.BTN, nc.BTN)
     ResetBtn.Size  = UDim2.fromOffset(nc.BTN, nc.BTN)
     ResetBtn.Position = UDim2.fromOffset(BTN_PAD, BTN_PAD + nc.BTN + 6)
@@ -853,7 +432,6 @@ task.spawn(function()
             local vpW, vpH = getVP()
             local px = Window.Position.X.Offset
             local py = Window.Position.Y.Offset
-            -- Se menos de 30px estão visíveis em qualquer eixo, recupera
             local rightEdge  = px + WIN_W
             local bottomEdge = py + WIN_H
             local outOfBounds =
@@ -867,7 +445,6 @@ task.spawn(function()
                 warn("[UI] Janela recuperada automaticamente.")
             end
         end
-        -- Garante que os botões flutuantes estão dentro da tela
         local vpW, vpH = getVP()
         local bx = math.clamp(BTN_PAD, 0, vpW - BTN_SZ - BTN_PAD)
         local by = math.clamp(BTN_PAD, 0, vpH - BTN_SZ * 2 - 20)
