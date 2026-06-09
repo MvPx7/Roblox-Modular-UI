@@ -1,288 +1,340 @@
--- UI.lua
--- Carregamento via loadstring + GitHub Raw. Suporte mobile + minimizar.
+-- Modules/PlayerTab.lua
+local PlayerTab = {}
 
--- ──────────────────────────────────────────────
--- ⚙️  CONFIGURAÇÃO — edite apenas aqui
--- ──────────────────────────────────────────────
-local GITHUB_RAW = "https://raw.githubusercontent.com/MvPx7/Roblox-Modular-UI/main/Modules/"
+function PlayerTab.Init(frame, T)
+    local LP  = game.Players.LocalPlayer
+    local RS  = game:GetService("RunService")
+    local UIS = game:GetService("UserInputService")
+    local TS  = game:GetService("TweenService")
 
-local Players     = game:GetService("Players")
-local UIS         = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
-local IsMobile    = UIS.TouchEnabled and not UIS.KeyboardEnabled
-
-local TABS = {
-    { name = "Home",    module = "HomeTab"   },
-    { name = "NPC",     module = "NPCTab"    },
-    { name = "Player",  module = "PlayerTab" },
-    { name = "Visual",  module = "VisualTab" },
-    { name = "Config",  module = "ConfigTab" },
-}
-
-local THEME = {
-    BG         = Color3.fromRGB(15,  15,  20),
-    SURFACE    = Color3.fromRGB(22,  22,  30),
-    ACCENT     = Color3.fromRGB(99,  102, 241),
-    ACCENT_DIM = Color3.fromRGB(55,  57,  140),
-    TEXT       = Color3.fromRGB(230, 230, 240),
-    SUBTEXT    = Color3.fromRGB(130, 130, 150),
-    TAB_H      = IsMobile and 44 or 36,
-    HEADER_H   = IsMobile and 48 or 40,
-    CORNER     = UDim.new(0, 8),
-    FONT       = Enum.Font.GothamMedium,
-    FONT_BOLD  = Enum.Font.GothamBold,
-    MOBILE     = IsMobile,
-}
-
--- ── Helpers ──────────────────────────────────────────────────────────────────
-local function corner(p, r)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = r or THEME.CORNER
-    c.Parent = p
-end
-local function newFrame(props)
-    local f = Instance.new("Frame")
-    for k,v in pairs(props) do f[k]=v end; return f
-end
-local function newLabel(props)
-    local l = Instance.new("TextLabel")
-    for k,v in pairs(props) do l[k]=v end; return l
-end
-local function newButton(props)
-    local b = Instance.new("TextButton")
-    for k,v in pairs(props) do b[k]=v end; return b
-end
-
--- Carrega módulo remotamente
-local function loadModule(name)
-    local ok, result = pcall(function()
-        return loadstring(game:HttpGet(GITHUB_RAW .. name .. ".lua", true))()
-    end)
-    if ok then return result end
-    warn("[UI] Módulo '" .. name .. "' falhou: " .. tostring(result))
-    return nil
-end
-
--- ── GUI base ─────────────────────────────────────────────────────────────────
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name           = "MainGui"
-ScreenGui.ResetOnSpawn   = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent         = PlayerGui
-
-local WIN_W = IsMobile and 420 or 520
-local WIN_H = IsMobile and 480 or 420
-
-local Window = newFrame({
-    Name             = "Window",
-    Size             = UDim2.fromOffset(WIN_W, WIN_H),
-    Position         = UDim2.fromScale(0.5, 0.5),
-    AnchorPoint      = Vector2.new(0.5, 0.5),
-    BackgroundColor3 = THEME.BG,
-    BorderSizePixel  = 0,
-    Parent           = ScreenGui,
-})
-corner(Window)
-
--- Sombra
-local Shadow = newFrame({
-    Size                   = UDim2.new(1,12,1,12),
-    Position               = UDim2.fromOffset(-6,-6),
-    BackgroundColor3       = Color3.new(0,0,0),
-    BackgroundTransparency = 0.6,
-    BorderSizePixel        = 0,
-    ZIndex                 = Window.ZIndex - 1,
-    Parent                 = Window,
-})
-corner(Shadow, UDim.new(0,12))
-
--- Header
-local Header = newFrame({
-    Name             = "Header",
-    Size             = UDim2.new(1, 0, 0, THEME.HEADER_H),
-    BackgroundColor3 = THEME.SURFACE,
-    BorderSizePixel  = 0,
-    Parent           = Window,
-})
-corner(Header)
-newFrame({ -- corrige cantos inferiores
-    Size             = UDim2.new(1,0,0,THEME.CORNER.Offset),
-    Position         = UDim2.new(0,0,1,-THEME.CORNER.Offset),
-    BackgroundColor3 = THEME.SURFACE,
-    BorderSizePixel  = 0,
-    Parent           = Header,
-})
-newLabel({
-    Size                   = UDim2.new(1,-90,1,0),
-    Position               = UDim2.fromOffset(12,0),
-    BackgroundTransparency = 1,
-    Text                   = "✦  Menu Principal",
-    TextColor3             = THEME.TEXT,
-    Font                   = THEME.FONT_BOLD,
-    TextSize               = IsMobile and 16 or 15,
-    TextXAlignment         = Enum.TextXAlignment.Left,
-    Parent                 = Header,
-})
-
--- Botão minimizar  ▲ / ▼
--- FIX: usar apenas Activated (dispara UMA vez em PC e mobile).
---      MouseButton1Click + Activated juntos causavam duplo disparo.
-local minimized = false
-local MinBtn = newButton({
-    Size             = UDim2.fromOffset(IsMobile and 44 or 36, IsMobile and 34 or 28),
-    AnchorPoint      = Vector2.new(1, 0.5),
-    Position         = UDim2.new(1,-8,0.5,0),
-    BackgroundColor3 = THEME.ACCENT_DIM,
-    Text             = "▼",
-    TextColor3       = THEME.TEXT,
-    Font             = THEME.FONT_BOLD,
-    TextSize         = 14,
-    BorderSizePixel  = 0,
-    AutoButtonColor  = false,
-    Parent           = Header,
-})
-corner(MinBtn, UDim.new(0,6))
-
-local TabBar
-local ContentArea
-
-local function setMinimized(state)
-    minimized = state
-    MinBtn.Text = minimized and "▲" or "▼"
-    if TabBar      then TabBar.Visible      = not minimized end
-    if ContentArea then ContentArea.Visible = not minimized end
-    Window.Size = minimized
-        and UDim2.fromOffset(WIN_W, THEME.HEADER_H)
-        or  UDim2.fromOffset(WIN_W, WIN_H)
-end
-
--- Apenas Activated — funciona em PC (mouse) e mobile (touch) sem duplicar
-MinBtn.Activated:Connect(function() setMinimized(not minimized) end)
-
--- Arrastar (mouse + touch)
--- FIX: ignora input no MinBtn para não arrastar ao tentar minimizar
-do
-    local dragging, startPos, startWin
-    local function beginDrag(pos)
-        dragging = true; startPos = pos; startWin = Window.Position
+    local function corner(p,r)
+        local c=Instance.new("UICorner"); c.CornerRadius=r or T.CORNER; c.Parent=p
     end
-    local function endDrag() dragging = false end
-    local function moveDrag(pos)
-        if not dragging then return end
-        local d = pos - startPos
-        Window.Position = UDim2.new(
-            startWin.X.Scale, startWin.X.Offset + d.X,
-            startWin.Y.Scale, startWin.Y.Offset + d.Y)
+    local function tween(o,t,p) TS:Create(o,TweenInfo.new(t,Enum.EasingStyle.Quad),p):Play() end
+
+    -- ── Scroll ────────────────────────────────────────────────────────────────
+    local scroll=Instance.new("ScrollingFrame")
+    scroll.Size=UDim2.fromScale(1,1)
+    scroll.BackgroundTransparency=1
+    scroll.BorderSizePixel=0
+    scroll.ScrollBarThickness=2
+    scroll.ScrollBarImageColor3=T.ACCENT
+    scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+    scroll.CanvasSize=UDim2.new()
+    scroll.Parent=frame
+    local ll=Instance.new("UIListLayout",scroll)
+    ll.Padding=UDim.new(0,6)
+    local pad=Instance.new("UIPadding",scroll)
+    pad.PaddingTop=UDim.new(0,8)
+    pad.PaddingLeft=UDim.new(0,10)
+    pad.PaddingRight=UDim.new(0,10)
+    pad.PaddingBottom=UDim.new(0,8)
+
+    -- ── Seção label ───────────────────────────────────────────────────────────
+    local order=0
+    local function secLabel(text)
+        order+=1
+        local l=Instance.new("TextLabel")
+        l.Size=UDim2.new(1,0,0,14)
+        l.BackgroundTransparency=1
+        l.Text=string.upper(text)
+        l.TextColor3=T.SUBTEXT
+        l.Font=T.FONTB
+        l.TextSize=9
+        l.TextXAlignment=Enum.TextXAlignment.Left
+        l.LayoutOrder=order
+        l.Parent=scroll
     end
-    Header.InputBegan:Connect(function(i)
-        -- Ignora se o clique foi no botão minimizar
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            -- Só inicia drag se não estiver sobre o MinBtn
-            local mPos = i.Position
-            local bPos = MinBtn.AbsolutePosition
-            local bSz  = MinBtn.AbsoluteSize
-            local overBtn = mPos.X >= bPos.X and mPos.X <= bPos.X + bSz.X
-                        and mPos.Y >= bPos.Y and mPos.Y <= bPos.Y + bSz.Y
-            if not overBtn then beginDrag(mPos) end
+
+    -- ── Switch (toggle bonito) ────────────────────────────────────────────────
+    -- Layout: [ label ]  [ pill switch ]
+    local function makeSwitch(labelText, onEnable, onDisable)
+        order+=1
+        local active=false
+        local row=Instance.new("Frame")
+        row.Size=UDim2.new(1,0,0,T.MOBILE and 42 or 34)
+        row.BackgroundColor3=T.SURFACE
+        row.BorderSizePixel=0
+        row.LayoutOrder=order
+        row.Parent=scroll
+        corner(row, UDim.new(0,8))
+
+        local pad2=Instance.new("UIPadding",row)
+        pad2.PaddingLeft=UDim.new(0,10)
+        pad2.PaddingRight=UDim.new(0,10)
+
+        local lbl=Instance.new("TextLabel",row)
+        lbl.Size=UDim2.new(1,-52,1,0)
+        lbl.BackgroundTransparency=1
+        lbl.Text=labelText
+        lbl.TextColor3=T.TEXT
+        lbl.Font=T.FONT
+        lbl.TextSize=T.MOBILE and 14 or 12
+        lbl.TextXAlignment=Enum.TextXAlignment.Left
+
+        -- Pill
+        local PW,PH=44,T.MOBILE and 26 or 22
+        local pill=Instance.new("Frame",row)
+        pill.Size=UDim2.fromOffset(PW,PH)
+        pill.AnchorPoint=Vector2.new(1,0.5)
+        pill.Position=UDim2.new(1,0,0.5,0)
+        pill.BackgroundColor3=Color3.fromRGB(45,45,60)
+        pill.BorderSizePixel=0
+        corner(pill,UDim.new(0,PH//2))
+
+        local KS=PH-6
+        local knob=Instance.new("Frame",pill)
+        knob.Size=UDim2.fromOffset(KS,KS)
+        knob.AnchorPoint=Vector2.new(0,0.5)
+        knob.Position=UDim2.new(0,3,0.5,0)
+        knob.BackgroundColor3=Color3.fromRGB(120,120,140)
+        knob.BorderSizePixel=0
+        corner(knob,UDim.new(0,KS//2))
+
+        -- Área clicável invisível cobre a linha toda
+        local btn=Instance.new("TextButton",row)
+        btn.Size=UDim2.fromScale(1,1)
+        btn.BackgroundTransparency=1
+        btn.Text=""
+        btn.AutoButtonColor=false
+
+        local function toggle()
+            active=not active
+            if active then
+                tween(pill,0.15,{BackgroundColor3=T.ACCENT})
+                tween(knob,0.15,{Position=UDim2.new(1,-(KS+3),0.5,0),BackgroundColor3=Color3.new(1,1,1)})
+                onEnable()
+            else
+                tween(pill,0.15,{BackgroundColor3=Color3.fromRGB(45,45,60)})
+                tween(knob,0.15,{Position=UDim2.new(0,3,0.5,0),BackgroundColor3=Color3.fromRGB(120,120,140)})
+                onDisable()
+            end
         end
-    end)
-    Header.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then endDrag() end
-    end)
-    UIS.InputChanged:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseMovement
-        or i.UserInputType == Enum.UserInputType.Touch then moveDrag(i.Position) end
-    end)
-end
-
--- TabBar
-TabBar = newFrame({
-    Name             = "TabBar",
-    Size             = UDim2.new(1,0,0,THEME.TAB_H),
-    Position         = UDim2.fromOffset(0, THEME.HEADER_H),
-    BackgroundColor3 = THEME.SURFACE,
-    BorderSizePixel  = 0,
-    Parent           = Window,
-})
-local tl = Instance.new("UIListLayout", TabBar)
-tl.FillDirection = Enum.FillDirection.Horizontal
-tl.SortOrder     = Enum.SortOrder.LayoutOrder
-
--- ContentArea
-ContentArea = newFrame({
-    Name                   = "ContentArea",
-    Size                   = UDim2.new(1,0,1,-(THEME.HEADER_H+THEME.TAB_H)),
-    Position               = UDim2.fromOffset(0, THEME.HEADER_H+THEME.TAB_H),
-    BackgroundTransparency = 1,
-    BorderSizePixel        = 0,
-    Parent                 = Window,
-})
-
--- ── Carregamento de abas ──────────────────────────────────────────────────────
-local tabButtons = {}
-local tabFrames  = {}
-local activeTab  = nil
-
-local function setActiveTab(name)
-    if activeTab == name then return end
-    activeTab = name
-    for _, n in ipairs(TABS) do
-        local btn = tabButtons[n.name]
-        local frm = tabFrames[n.name]
-        local on  = (n.name == name)
-        btn.BackgroundColor3       = on and THEME.ACCENT or Color3.new(0,0,0)
-        btn.BackgroundTransparency = on and 0 or 1
-        btn.TextColor3             = on and THEME.TEXT or THEME.SUBTEXT
-        if frm then frm.Visible = on end
-    end
-end
-
-for i, tabInfo in ipairs(TABS) do
-    local btn = newButton({
-        Name                   = tabInfo.name.."Btn",
-        Size                   = UDim2.new(1/#TABS, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text                   = tabInfo.name,
-        TextColor3             = THEME.SUBTEXT,
-        Font                   = THEME.FONT,
-        TextSize               = IsMobile and 14 or 13,
-        BorderSizePixel        = 0,
-        AutoButtonColor        = false,
-        LayoutOrder            = i,
-        Parent                 = TabBar,
-    })
-    corner(btn, UDim.new(0,6))
-    tabButtons[tabInfo.name] = btn
-
-    local frame = newFrame({
-        Name                   = tabInfo.name.."Frame",
-        Size                   = UDim2.fromScale(1,1),
-        BackgroundTransparency = 1,
-        Visible                = false,
-        Parent                 = ContentArea,
-    })
-    tabFrames[tabInfo.name] = frame
-
-    local mod = loadModule(tabInfo.module)
-    if mod and mod.Init then
-        mod.Init(frame, THEME)
-    else
-        newLabel({
-            Size                   = UDim2.fromScale(1,1),
-            BackgroundTransparency = 1,
-            Text                   = "⚠ Módulo '"..tabInfo.module.."' não encontrado.",
-            TextColor3             = Color3.fromRGB(220,80,80),
-            Font                   = THEME.FONT,
-            TextSize               = 14,
-            Parent                 = frame,
-        })
+        btn.Activated:Connect(toggle)
     end
 
-    -- FIX: apenas Activated, sem MouseButton1Click duplicado
-    btn.Activated:Connect(function() setActiveTab(tabInfo.name) end)
+    -- ── Slider ────────────────────────────────────────────────────────────────
+    local function makeSlider(labelText, minV, maxV, defV, onChange)
+        order+=1
+        local container=Instance.new("Frame")
+        container.Size=UDim2.new(1,0,0,T.MOBILE and 54 or 46)
+        container.BackgroundColor3=T.SURFACE
+        container.BorderSizePixel=0
+        container.LayoutOrder=order
+        container.Parent=scroll
+        corner(container, UDim.new(0,8))
+
+        local pad2=Instance.new("UIPadding",container)
+        pad2.PaddingLeft=UDim.new(0,10)
+        pad2.PaddingRight=UDim.new(0,10)
+        pad2.PaddingTop=UDim.new(0,6)
+
+        local lbl=Instance.new("TextLabel",container)
+        lbl.Size=UDim2.new(1,0,0,16)
+        lbl.BackgroundTransparency=1
+        lbl.Text=labelText..":  "..defV
+        lbl.TextColor3=T.TEXT
+        lbl.Font=T.FONT
+        lbl.TextSize=T.MOBILE and 13 or 11
+        lbl.TextXAlignment=Enum.TextXAlignment.Left
+
+        local TH=T.MOBILE and 8 or 5
+        local track=Instance.new("Frame",container)
+        track.Size=UDim2.new(1,0,0,TH)
+        track.Position=UDim2.new(0,0,0, T.MOBILE and 32 or 26)
+        track.BackgroundColor3=Color3.fromRGB(35,35,50)
+        track.BorderSizePixel=0
+        corner(track,UDim.new(0,4))
+
+        local fill=Instance.new("Frame",track)
+        fill.BackgroundColor3=T.ACCENT
+        fill.BorderSizePixel=0
+        fill.Size=UDim2.new((defV-minV)/(maxV-minV),0,1,0)
+        corner(fill,UDim.new(0,4))
+
+        local KS=T.MOBILE and 20 or 12
+        local knob=Instance.new("TextButton",track)
+        knob.Size=UDim2.fromOffset(KS,KS)
+        knob.AnchorPoint=Vector2.new(0.5,0.5)
+        knob.Position=UDim2.new((defV-minV)/(maxV-minV),0,0.5,0)
+        knob.BackgroundColor3=Color3.fromRGB(200,200,220)
+        knob.Text=""
+        knob.BorderSizePixel=0
+        knob.AutoButtonColor=false
+        corner(knob,UDim.new(0,KS//2))
+
+        local dragging=false
+        local function apply(absX)
+            local rel=math.clamp((absX-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1)
+            local val=math.floor(minV+(maxV-minV)*rel)
+            knob.Position=UDim2.new(rel,0,0.5,0)
+            fill.Size=UDim2.new(rel,0,1,0)
+            lbl.Text=labelText..":  "..val
+            onChange(val)
+        end
+
+        knob.MouseButton1Down:Connect(function() dragging=true end)
+        knob.InputBegan:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.Touch then dragging=true end
+        end)
+        UIS.InputEnded:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseButton1
+            or i.UserInputType==Enum.UserInputType.Touch then dragging=false end
+        end)
+        UIS.InputChanged:Connect(function(i)
+            if not dragging then return end
+            if i.UserInputType==Enum.UserInputType.MouseMovement
+            or i.UserInputType==Enum.UserInputType.Touch then apply(i.Position.X) end
+        end)
+        track.InputBegan:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseButton1
+            or i.UserInputType==Enum.UserInputType.Touch then
+                dragging=true; apply(i.Position.X)
+            end
+        end)
+    end
+
+    -- ════════════════════════════════════════════════════════════════════════
+    -- CONTEÚDO
+    -- ════════════════════════════════════════════════════════════════════════
+
+    secLabel("Movimento")
+
+    makeSlider("WalkSpeed", 16, 200, 16, function(v)
+        local hum=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed=v end
+    end)
+    makeSlider("JumpHeight", 7, 120, 7, function(v)
+        local hum=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.JumpHeight=v end
+    end)
+
+    secLabel("Habilidades")
+
+    -- ── Noclip ───────────────────────────────────────────────────────────────
+    local noclipConn
+    makeSwitch("Noclip",
+        function()
+            noclipConn=RS.Stepped:Connect(function()
+                local char=LP.Character; if not char then return end
+                for _,p in ipairs(char:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide=false end
+                end
+            end)
+        end,
+        function()
+            if noclipConn then noclipConn:Disconnect(); noclipConn=nil end
+            local char=LP.Character
+            if char then
+                for _,p in ipairs(char:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide=true end
+                end
+            end
+        end
+    )
+
+    -- ── Fly ──────────────────────────────────────────────────────────────────
+    -- PC:     WASD = horizontal  |  Space = subir  |  Shift = descer
+    -- Mobile: joystick = horizontal  |  câmera inclinada = vertical
+    --         (sem botões extras na tela)
+    local flyConn
+    makeSwitch("Voar",
+        function()
+            local char=LP.Character
+            local hrp=char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+
+            local hum=char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.PlatformStand=true end
+
+            local bv=Instance.new("BodyVelocity",hrp)
+            bv.Name="_fVel"; bv.MaxForce=Vector3.new(1e5,1e5,1e5); bv.Velocity=Vector3.zero
+
+            local bg=Instance.new("BodyGyro",hrp)
+            bg.Name="_fGyro"; bg.MaxTorque=Vector3.new(0,4e5,0); bg.D=100; bg.P=1e4
+
+            local SPD=40
+
+            flyConn=RS.Heartbeat:Connect(function()
+                local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                if not h then return end
+                local v2=h:FindFirstChild("_fVel")
+                local g2=h:FindFirstChild("_fGyro")
+                if not v2 or not g2 then return end
+
+                local cam=workspace.CurrentCamera
+                local cf=cam.CFrame
+                -- look com Y incluído → voa na direção que a câmera aponta
+                local look=cf.LookVector
+                local right=cf.RightVector
+
+                local mv=Vector3.zero
+
+                if T.MOBILE then
+                    -- Horizontal: MoveDirection (joystick nativo)
+                    local hum2=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+                    local md=hum2 and hum2.MoveDirection or Vector3.zero
+                    if md.Magnitude>0.05 then
+                        -- Projeta a direção do joystick no plano da câmera (com Y)
+                        local fwd=Vector3.new(look.X,look.Y,look.Z)
+                        local rt =Vector3.new(right.X,0,right.Z)
+                        if rt.Magnitude>0 then rt=rt.Unit end
+                        -- md já está em world space, usa só X/Z para pegar frente/direita
+                        local mdFlat=Vector3.new(md.X,0,md.Z)
+                        -- componente frente e lado
+                        local camFlat=Vector3.new(look.X,0,look.Z)
+                        if camFlat.Magnitude>0 then camFlat=camFlat.Unit end
+                        local dotF=mdFlat:Dot(camFlat)
+                        local dotR=mdFlat:Dot(rt)
+                        -- voa na direção da câmera (incluindo Y) proporcional ao joystick
+                        mv = look*dotF + rt*dotR
+                    end
+                else
+                    -- PC: WASD na direção da câmera (com Y incluso)
+                    if UIS:IsKeyDown(Enum.KeyCode.W) then mv+=look end
+                    if UIS:IsKeyDown(Enum.KeyCode.S) then mv-=look end
+                    if UIS:IsKeyDown(Enum.KeyCode.A) then mv-=right end
+                    if UIS:IsKeyDown(Enum.KeyCode.D) then mv+=right end
+                    -- Space/Shift: vertical puro
+                    if UIS:IsKeyDown(Enum.KeyCode.Space)     then mv+=Vector3.new(0,1,0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then mv-=Vector3.new(0,1,0) end
+                end
+
+                v2.Velocity=mv.Magnitude>0.01 and mv.Unit*SPD or Vector3.zero
+                local flatLook=Vector3.new(look.X,0,look.Z)
+                g2.CFrame=CFrame.new(Vector3.zero, flatLook.Magnitude>0 and flatLook or Vector3.new(0,0,-1))
+            end)
+        end,
+        function()
+            if flyConn then flyConn:Disconnect(); flyConn=nil end
+            local char=LP.Character
+            if char then
+                local hum=char:FindFirstChildOfClass("Humanoid")
+                if hum then hum.PlatformStand=false end
+                local hrp=char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local v=hrp:FindFirstChild("_fVel")
+                    local g=hrp:FindFirstChild("_fGyro")
+                    if v then v:Destroy() end
+                    if g then g:Destroy() end
+                end
+            end
+        end
+    )
+
+    -- ── God Mode ─────────────────────────────────────────────────────────────
+    local godConn
+    makeSwitch("God Mode",
+        function()
+            godConn=RS.Heartbeat:Connect(function()
+                local hum=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.Health=hum.MaxHealth end
+            end)
+        end,
+        function()
+            if godConn then godConn:Disconnect(); godConn=nil end
+        end
+    )
 end
 
-setActiveTab(TABS[1].name)
+return PlayerTab
