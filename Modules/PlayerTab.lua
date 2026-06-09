@@ -48,6 +48,7 @@ function PlayerTab.Init(frame, T)
 
     -- ── Switch (toggle bonito) ────────────────────────────────────────────────
     -- Layout: [ label ]  [ pill switch ]
+    -- Retorna { toggle = function(state) } para sync externo (ex: hotkeys)
     local function makeSwitch(labelText, onEnable, onDisable)
         order+=1
         local active=false
@@ -98,19 +99,30 @@ function PlayerTab.Init(frame, T)
         btn.Text=""
         btn.AutoButtonColor=false
 
-        local function toggle()
-            active=not active
-            if active then
+        local function setVisual(state)
+            if state then
                 tween(pill,0.15,{BackgroundColor3=T.ACCENT})
                 tween(knob,0.15,{Position=UDim2.new(1,-(KS+3),0.5,0),BackgroundColor3=Color3.new(1,1,1)})
-                onEnable()
             else
                 tween(pill,0.15,{BackgroundColor3=Color3.fromRGB(45,45,60)})
                 tween(knob,0.15,{Position=UDim2.new(0,3,0.5,0),BackgroundColor3=Color3.fromRGB(120,120,140)})
-                onDisable()
             end
         end
-        btn.Activated:Connect(toggle)
+
+        local function toggle(forceState)
+            if forceState ~= nil then
+                if forceState == active then return end -- já está no estado certo
+                active = forceState
+            else
+                active = not active
+            end
+            setVisual(active)
+            if active then onEnable() else onDisable() end
+        end
+
+        btn.Activated:Connect(function() toggle() end)
+
+        return { toggle = toggle }
     end
 
     -- ── Slider ────────────────────────────────────────────────────────────────
@@ -211,135 +223,194 @@ function PlayerTab.Init(frame, T)
 
     secLabel("Habilidades")
 
-    -- ── Noclip ───────────────────────────────────────────────────────────────
-    local noclipConn
-    makeSwitch("Noclip",
-        function()
-            noclipConn=RS.Stepped:Connect(function()
-                local char=LP.Character; if not char then return end
-                for _,p in ipairs(char:GetDescendants()) do
-                    if p:IsA("BasePart") then p.CanCollide=false end
-                end
-            end)
-        end,
-        function()
-            if noclipConn then noclipConn:Disconnect(); noclipConn=nil end
-            local char=LP.Character
-            if char then
-                for _,p in ipairs(char:GetDescendants()) do
-                    if p:IsA("BasePart") then p.CanCollide=true end
-                end
+    -- ══════════════════════════════════════════════════════════════════════════
+    --  ESTADO COMPARTILHADO  (fly + noclip precisam se ver)
+    -- ══════════════════════════════════════════════════════════════════════════
+    local flyActive    = false
+    local noclipActive = false
+    local flySpeed     = 40   -- velocidade inicial; + / - mudam isso
+    local flyConn      = nil
+    local noclipConn   = nil
+
+    -- ── Label de velocidade de voo (atualizada pelos atalhos) ─────────────────
+    order += 1
+    local flySpeedRow = Instance.new("Frame")
+    flySpeedRow.Size = UDim2.new(1,0,0,24)
+    flySpeedRow.BackgroundTransparency = 1
+    flySpeedRow.LayoutOrder = order
+    flySpeedRow.Parent = scroll
+
+    local flySpeedLbl = Instance.new("TextLabel", flySpeedRow)
+    flySpeedLbl.Size = UDim2.fromScale(1,1)
+    flySpeedLbl.BackgroundTransparency = 1
+    flySpeedLbl.Text = "Velocidade de Voo:  " .. flySpeed .. "  (+ / -)"
+    flySpeedLbl.TextColor3 = T.SUBTEXT
+    flySpeedLbl.Font = T.FONT
+    flySpeedLbl.TextSize = 10
+    flySpeedLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- ── helpers internos ──────────────────────────────────────────────────────
+    local function stopFly()
+        flyActive = false
+        if flyConn then flyConn:Disconnect(); flyConn = nil end
+        local char = LP.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.PlatformStand = false end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local bv = hrp:FindFirstChild("_fVel")
+                local bg = hrp:FindFirstChild("_fGyro")
+                if bv then bv:Destroy() end
+                if bg then bg:Destroy() end
             end
         end
-    )
+    end
 
-    -- ── Fly ──────────────────────────────────────────────────────────────────
-    -- PC:     WASD = horizontal  |  Space = subir  |  Shift = descer
-    -- Mobile: joystick = horizontal  |  câmera inclinada = vertical
-    --         (sem botões extras na tela)
-    local flyConn
-    makeSwitch("Voar",
-        function()
-            local char=LP.Character
-            local hrp=char and char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
+    local function startFly()
+        local char = LP.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        flyActive = true
 
-            local hum=char:FindFirstChildOfClass("Humanoid")
-            if hum then hum.PlatformStand=true end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = true end
 
-            local bv=Instance.new("BodyVelocity",hrp)
-            bv.Name="_fVel"; bv.MaxForce=Vector3.new(1e5,1e5,1e5); bv.Velocity=Vector3.zero
+        -- Remove instâncias antigas se existirem
+        if hrp:FindFirstChild("_fVel") then hrp:FindFirstChild("_fVel"):Destroy() end
+        if hrp:FindFirstChild("_fGyro") then hrp:FindFirstChild("_fGyro"):Destroy() end
 
-            local bg=Instance.new("BodyGyro",hrp)
-            bg.Name="_fGyro"
-            bg.MaxTorque=Vector3.new(4e5,4e5,4e5) -- trava TODOS os eixos, sem capotar
-            bg.D=500
-            bg.P=1e5
+        local bv = Instance.new("BodyVelocity", hrp)
+        bv.Name = "_fVel"
+        bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+        bv.Velocity = Vector3.zero
 
-            local SPD=40
+        local bg = Instance.new("BodyGyro", hrp)
+        bg.Name = "_fGyro"
+        bg.MaxTorque = Vector3.new(4e5, 4e5, 4e5)
+        bg.D = 500
+        bg.P = 1e5
 
-            flyConn=RS.Heartbeat:Connect(function()
-                local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                if not h then return end
-                local v2=h:FindFirstChild("_fVel")
-                local g2=h:FindFirstChild("_fGyro")
-                if not v2 or not g2 then return end
+        flyConn = RS.Heartbeat:Connect(function()
+            local h  = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+            if not h then return end
+            local bv2 = h:FindFirstChild("_fVel")
+            local bg2 = h:FindFirstChild("_fGyro")
+            if not bv2 or not bg2 then return end
 
-                local cam=workspace.CurrentCamera
-                local cf=cam.CFrame
-                -- look com Y incluído → voa na direção que a câmera aponta
-                local look=cf.LookVector
-                local right=cf.RightVector
+            local cam   = workspace.CurrentCamera
+            local cf    = cam.CFrame
+            local look  = cf.LookVector   -- direção que a câmera aponta (inclui Y)
+            local right = cf.RightVector
+            -- Vetor "para cima" puro, independente da câmera
+            local up    = Vector3.new(0, 1, 0)
 
-                local mv=Vector3.zero
+            local mv = Vector3.zero
 
-                if T.MOBILE then
-                    -- Horizontal: MoveDirection (joystick nativo)
-                    local hum2=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-                    local md=hum2 and hum2.MoveDirection or Vector3.zero
-                    if md.Magnitude>0.05 then
-                        -- Projeta a direção do joystick no plano da câmera (com Y)
-                        local fwd=Vector3.new(look.X,look.Y,look.Z)
-                        local rt =Vector3.new(right.X,0,right.Z)
-                        if rt.Magnitude>0 then rt=rt.Unit end
-                        -- md já está em world space, usa só X/Z para pegar frente/direita
-                        local mdFlat=Vector3.new(md.X,0,md.Z)
-                        -- componente frente e lado
-                        local camFlat=Vector3.new(look.X,0,look.Z)
-                        if camFlat.Magnitude>0 then camFlat=camFlat.Unit end
-                        local dotF=mdFlat:Dot(camFlat)
-                        local dotR=mdFlat:Dot(rt)
-                        -- voa na direção da câmera (incluindo Y) proporcional ao joystick
-                        mv = look*dotF + rt*dotR
-                    end
-                else
-                    -- PC: WASD na direção da câmera (com Y incluso)
-                    if UIS:IsKeyDown(Enum.KeyCode.W) then mv+=look end
-                    if UIS:IsKeyDown(Enum.KeyCode.S) then mv-=look end
-                    if UIS:IsKeyDown(Enum.KeyCode.A) then mv-=right end
-                    if UIS:IsKeyDown(Enum.KeyCode.D) then mv+=right end
-                    -- Space/Shift: vertical puro
-                    if UIS:IsKeyDown(Enum.KeyCode.Space)     then mv+=Vector3.new(0,1,0) end
-                    if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then mv-=Vector3.new(0,1,0) end
+            if T.MOBILE then
+                local hum2 = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+                local md   = hum2 and hum2.MoveDirection or Vector3.zero
+                if md.Magnitude > 0.05 then
+                    local camFlat = Vector3.new(look.X, 0, look.Z)
+                    local rt      = Vector3.new(right.X, 0, right.Z)
+                    if camFlat.Magnitude > 0 then camFlat = camFlat.Unit end
+                    if rt.Magnitude > 0      then rt      = rt.Unit      end
+                    local mdFlat = Vector3.new(md.X, 0, md.Z)
+                    mv = camFlat * mdFlat:Dot(camFlat) + rt * mdFlat:Dot(rt)
                 end
+            else
+                -- WASD: movimento horizontal relativo à câmera (SEM inclinação Y)
+                local fwd   = Vector3.new(look.X, 0, look.Z)
+                local strafe = Vector3.new(right.X, 0, right.Z)
+                if fwd.Magnitude    > 0 then fwd    = fwd.Unit    end
+                if strafe.Magnitude > 0 then strafe = strafe.Unit end
 
-                v2.Velocity=mv.Magnitude>0.01 and mv.Unit*SPD or Vector3.zero
-                -- Mantém o personagem sempre upright (sem capotar em colisões)
-                local flatLook=Vector3.new(look.X,0,look.Z)
-                local dir=flatLook.Magnitude>0 and flatLook.Unit or Vector3.new(0,0,-1)
-                g2.CFrame=CFrame.fromMatrix(Vector3.zero, dir:Cross(Vector3.new(0,1,0))*-1, Vector3.new(0,1,0))
-            end)
-        end,
-        function()
-            if flyConn then flyConn:Disconnect(); flyConn=nil end
-            local char=LP.Character
-            if char then
-                local hum=char:FindFirstChildOfClass("Humanoid")
-                if hum then hum.PlatformStand=false end
-                local hrp=char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local v=hrp:FindFirstChild("_fVel")
-                    local g=hrp:FindFirstChild("_fGyro")
-                    if v then v:Destroy() end
-                    if g then g:Destroy() end
-                end
+                if UIS:IsKeyDown(Enum.KeyCode.W) then mv += fwd    end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then mv -= fwd    end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then mv -= strafe end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then mv += strafe end
+                -- Vertical puro: Space sobe, Shift desce
+                if UIS:IsKeyDown(Enum.KeyCode.Space)     then mv += up end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then mv -= up end
+            end
+
+            bv2.Velocity = mv.Magnitude > 0.01 and mv.Unit * flySpeed or Vector3.zero
+
+            -- Gyro: personagem sempre de frente para onde a câmera aponta (só eixo Y)
+            local flatLook = Vector3.new(look.X, 0, look.Z)
+            local dir = flatLook.Magnitude > 0 and flatLook.Unit or Vector3.new(0, 0, -1)
+            bg2.CFrame = CFrame.new(Vector3.zero, dir)
+        end)
+    end
+
+    local function stopNoclip()
+        noclipActive = false
+        if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+        local char = LP.Character
+        if char then
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = true end
             end
         end
-    )
+    end
 
-    -- ── God Mode ─────────────────────────────────────────────────────────────
-    local godConn
-    makeSwitch("God Mode",
-        function()
-            godConn=RS.Heartbeat:Connect(function()
-                local hum=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-                if hum then hum.Health=hum.MaxHealth end
-            end)
-        end,
-        function()
-            if godConn then godConn:Disconnect(); godConn=nil end
+    local function startNoclip()
+        noclipActive = true
+        noclipConn = RS.Stepped:Connect(function()
+            local char = LP.Character; if not char then return end
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end)
+    end
+
+    -- ── Noclip switch (F2) ────────────────────────────────────────────────────
+    local noclipSwitch -- referência ao toggle visual
+    noclipSwitch = makeSwitch("Noclip  [F2]", startNoclip, stopNoclip)
+
+    -- ── Fly switch (F1) ───────────────────────────────────────────────────────
+    local flySwitch
+    flySwitch = makeSwitch("Voar  [F1]  |  WASD + Space/Shift", startFly, stopFly)
+
+    -- ── Hotkeys globais F1 / F2 / + / - ──────────────────────────────────────
+    UIS.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+
+        -- F1 → toggle voo
+        if input.KeyCode == Enum.KeyCode.F1 then
+            if flyActive then
+                stopFly()
+                -- atualiza visual do switch
+                if flySwitch and flySwitch.toggle then flySwitch.toggle(false) end
+            else
+                startFly()
+                if flySwitch and flySwitch.toggle then flySwitch.toggle(true) end
+            end
+
+        -- F2 → toggle noclip
+        elseif input.KeyCode == Enum.KeyCode.F2 then
+            if noclipActive then
+                stopNoclip()
+                if noclipSwitch and noclipSwitch.toggle then noclipSwitch.toggle(false) end
+            else
+                startNoclip()
+                if noclipSwitch and noclipSwitch.toggle then noclipSwitch.toggle(true) end
+            end
+
+        -- + / = → aumenta velocidade de voo
+        elseif input.KeyCode == Enum.KeyCode.Equals
+            or input.KeyCode == Enum.KeyCode.KeypadPlus then
+            flySpeed = math.min(flySpeed + 10, 300)
+            flySpeedLbl.Text = "Velocidade de Voo:  " .. flySpeed .. "  (+ / -)"
+
+        -- - → diminui velocidade de voo
+        elseif input.KeyCode == Enum.KeyCode.Minus
+            or input.KeyCode == Enum.KeyCode.KeypadMinus then
+            flySpeed = math.max(flySpeed - 10, 10)
+            flySpeedLbl.Text = "Velocidade de Voo:  " .. flySpeed .. "  (+ / -)"
         end
-    )
+    end)
+
 end
 
 return PlayerTab
