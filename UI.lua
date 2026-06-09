@@ -130,58 +130,45 @@ mk("TextLabel", {
     Parent = Header,
 })
 
--- Botão minimizar
-local minimized = false
-local MinBtn = mk("TextButton", {
-    Size = UDim2.fromOffset(IsMobile and 36 or 28, IsMobile and 24 or 20),
-    AnchorPoint = Vector2.new(1, 0.5),
-    Position = UDim2.new(1, -8, 0.5, 0),
-    BackgroundColor3 = T.BORDER,
-    Text = "−",
-    TextColor3 = T.TEXT,
-    Font = T.FONTB,
-    TextSize = 15,
+-- Botão flutuante fixo no canto — sempre visível, nunca sai da tela
+local ToggleBtn = mk("TextButton", {
+    Size        = UDim2.fromOffset(IsMobile and 44 or 36, IsMobile and 44 or 36),
+    Position    = UDim2.new(0, 8, 0, 8),   -- canto superior esquerdo fixo
+    BackgroundColor3 = T.ACCENT,
+    Text        = "✦",
+    TextColor3  = T.TEXT,
+    Font        = T.FONTB,
+    TextSize    = IsMobile and 18 or 15,
     BorderSizePixel = 0,
     AutoButtonColor = false,
+    ZIndex      = 10,
+    Parent      = SG,   -- filho do ScreenGui, não da janela
+})
+corner(ToggleBtn, UDim.new(0, IsMobile and 12 or 8))
+
+-- Remove o "−" do header, já que o toggle é externo
+mk("TextLabel", {   -- placeholder vazio no lugar do MinBtn
+    Size = UDim2.fromOffset(1, 1),
+    BackgroundTransparency = 1,
+    Text = "",
     Parent = Header,
 })
-corner(MinBtn, UDim.new(0, 5))
 
 local TabBar, ContentArea
-
-local function clampPos()
-    local cvp = workspace.CurrentCamera.ViewportSize
-    local ap  = Window.AbsolutePosition
-    local as  = Window.AbsoluteSize
-    Window.Position = UDim2.fromOffset(
-        math.clamp(ap.X, 0, cvp.X - as.X),
-        math.clamp(ap.Y, 0, cvp.Y - as.Y)
-    )
-end
+local minimized = false
 
 local function setMin(s)
     minimized = s
-    MinBtn.Text = s and "+" or "−"
-    if TabBar      then TabBar.Visible      = not s end
-    if ContentArea then ContentArea.Visible = not s end
-    -- Ao expandir: ajusta Y antes do tween para não sair da tela pela base
-    if not s then
-        local cvp = workspace.CurrentCamera.ViewportSize
-        local ap  = Window.AbsolutePosition
-        local ny  = math.clamp(ap.Y, 0, cvp.Y - WIN_H)
-        local nx  = math.clamp(ap.X, 0, cvp.X - WIN_W)
-        Window.Position = UDim2.fromOffset(nx, ny)
-    end
-    tw(Window, 0.12, {Size = UDim2.fromOffset(WIN_W, s and T.HDR_H or WIN_H)})
+    Window.Visible = not s
+    ToggleBtn.Text      = s and "✦" or "×"
+    ToggleBtn.BackgroundColor3 = s and T.ACCENT or Color3.fromRGB(80, 30, 30)
 end
-MinBtn.Activated:Connect(function() setMin(not minimized) end)
+ToggleBtn.Activated:Connect(function() setMin(not minimized) end)
 
 -- ── Drag com clamp ────────────────────────────────────────────────────────────
 do
     local drag, sp, sw
     local function startDrag(pos)
-        local bp, bs = MinBtn.AbsolutePosition, MinBtn.AbsoluteSize
-        if pos.X>=bp.X and pos.X<=bp.X+bs.X and pos.Y>=bp.Y and pos.Y<=bp.Y+bs.Y then return end
         drag=true; sp=pos; sw=Window.Position
     end
     local function stopDrag() drag=false end
@@ -189,10 +176,9 @@ do
         if not drag then return end
         local d   = pos - sp
         local cvp = workspace.CurrentCamera.ViewportSize
-        local curH = minimized and T.HDR_H or WIN_H
         Window.Position = UDim2.fromOffset(
             math.clamp(sw.X.Offset + d.X, 0, cvp.X - WIN_W),
-            math.clamp(sw.Y.Offset + d.Y, 0, cvp.Y - curH)
+            math.clamp(sw.Y.Offset + d.Y, 0, cvp.Y - WIN_H)
         )
     end
     Header.InputBegan:Connect(function(i)
