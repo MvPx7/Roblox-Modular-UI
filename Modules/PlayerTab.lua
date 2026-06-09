@@ -20,6 +20,7 @@ function PlayerTab.Init(frame, THEME)
         l.LayoutOrder = order; l.Parent = parent
     end
 
+    -- FIX: usa apenas Activated (PC + mobile, sem duplo disparo)
     local function makeToggle(parent, text, colorOn, order, onEnable, onDisable)
         local colorOff = Color3.fromRGB(50, 50, 70)
         local active = false
@@ -42,8 +43,7 @@ function PlayerTab.Init(frame, THEME)
             b.BackgroundColor3 = active and colorOn or colorOff
             if active then onEnable() else onDisable() end
         end
-        b.MouseButton1Click:Connect(toggle)
-        b.TouchTap:Connect(toggle)
+        b.Activated:Connect(toggle)
         return b
     end
 
@@ -92,6 +92,9 @@ function PlayerTab.Init(frame, THEME)
         end
 
         knob.MouseButton1Down:Connect(function() dragging = true end)
+        knob.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.Touch then dragging = true end
+        end)
         UIS.InputEnded:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch then dragging = false end
@@ -136,7 +139,8 @@ function PlayerTab.Init(frame, THEME)
     -- ── HABILIDADES ───────────────────────────────────────────────────────
     secLabel(scroll, "HABILIDADES", 10)
 
-    -- Noclip
+    -- ── NOCLIP ────────────────────────────────────────────────────────────
+    -- FIX: ao desativar, restaura CanCollide = true em todas as partes
     local noclipConn
     makeToggle(scroll, "👻  Noclip", Color3.fromRGB(100, 40, 180), 11,
         function()
@@ -145,34 +149,83 @@ function PlayerTab.Init(frame, THEME)
                 for _, p in ipairs(char:GetDescendants()) do
                     if p:IsA("BasePart") then p.CanCollide = false end
                 end
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if hrp then hrp.CanCollide = false end
             end)
         end,
         function()
             if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+            -- Restaura colisão ao desativar
+            local char = LP.Character
+            if char then
+                for _, p in ipairs(char:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide = true end
+                end
+            end
         end
     )
 
-    -- Voo simples: câmera define direção, personagem flutua
+    -- ── VOO ───────────────────────────────────────────────────────────────
+    -- FIX PC:     W/A/S/D + Space/Shift para subir/descer
+    -- FIX Mobile: usa Humanoid.MoveDirection (joystick nativo do Roblox)
+    --             + botões Up/Down na tela para subir e descer
     local flightConn
+    local flyUpDown = 0  -- -1 desce, 0 neutro, 1 sobe (mobile)
+
+    -- Botões Up/Down visíveis apenas no mobile durante o voo
+    local flyBtnHolder = Instance.new("Frame")
+    flyBtnHolder.Size = UDim2.fromOffset(THEME.MOBILE and 110 or 0, THEME.MOBILE and 100 or 0)
+    flyBtnHolder.Position = UDim2.new(1, -(THEME.MOBILE and 120 or 0), 1, -(THEME.MOBILE and 110 or 0))
+    flyBtnHolder.BackgroundTransparency = 1
+    flyBtnHolder.Visible = false
+    flyBtnHolder.Parent = frame
+    flyBtnHolder.ZIndex = 10
+
+    if THEME.MOBILE then
+        local function makeVertBtn(txt, yPos, dir)
+            local b = Instance.new("TextButton", flyBtnHolder)
+            b.Size = UDim2.fromOffset(90, 42)
+            b.Position = UDim2.fromOffset(0, yPos)
+            b.BackgroundColor3 = Color3.fromRGB(40, 120, 200)
+            b.BackgroundTransparency = 0.3
+            b.Text = txt
+            b.TextColor3 = Color3.new(1,1,1)
+            b.Font = THEME.FONT_BOLD
+            b.TextSize = 15
+            b.BorderSizePixel = 0
+            b.AutoButtonColor = false
+            b.ZIndex = 11
+            corner(b)
+            b.InputBegan:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.Touch then flyUpDown = dir end
+            end)
+            b.InputEnded:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.Touch then flyUpDown = 0 end
+            end)
+        end
+        makeVertBtn("⬆ Subir",  0,  1)
+        makeVertBtn("⬇ Descer", 52, -1)
+    end
+
     makeToggle(scroll, "🚀  Voar", Color3.fromRGB(20, 140, 120), 12,
         function()
             local char = LP.Character
             local hrp  = char and char:FindFirstChild("HumanoidRootPart")
             if not hrp then return end
 
-            -- Remove gravidade do personagem
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum then hum.PlatformStand = true end
 
+            -- BodyVelocity + BodyGyro (compatível com todos os jogos)
             local bg = Instance.new("BodyGyro", hrp)
-            bg.Name = "_fGyro"; bg.MaxTorque = Vector3.new(0,4e5,0)
+            bg.Name = "_fGyro"
+            bg.MaxTorque = Vector3.new(0, 4e5, 0)
             bg.D = 100; bg.P = 1e4
 
             local bv = Instance.new("BodyVelocity", hrp)
-            bv.Name = "_fVel"; bv.MaxForce = Vector3.new(1e5,1e5,1e5)
+            bv.Name = "_fVel"
+            bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
             bv.Velocity = Vector3.zero
+
+            if THEME.MOBILE then flyBtnHolder.Visible = true end
 
             flightConn = RS.Heartbeat:Connect(function()
                 local h = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -187,18 +240,23 @@ function PlayerTab.Init(frame, THEME)
                 local mv   = Vector3.zero
 
                 if THEME.MOBILE then
-                    -- Mobile: joystick nativo do Roblox via thumbstick
-                    -- Usa a posição do polegar (já tratada pelo Roblox)
-                    -- Movimenta para frente enquanto voa, UP/DOWN via aceleração
-                    local ts = UIS:GetConnectedGamepads()
-                    mv = look.Magnitude > 0 and look.Unit * spd or Vector3.zero
+                    -- Direção horizontal: joystick nativo via MoveDirection do Humanoid
+                    local hum2 = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+                    local md   = hum2 and hum2.MoveDirection or Vector3.zero
+                    if md.Magnitude > 0.1 then
+                        mv = Vector3.new(md.X, 0, md.Z)
+                    end
+                    -- Vertical: botões Up/Down
+                    mv = mv + Vector3.new(0, flyUpDown, 0)
                 else
-                    if UIS:IsKeyDown(Enum.KeyCode.W) then mv += look.Unit end
-                    if UIS:IsKeyDown(Enum.KeyCode.S) then mv -= look.Unit end
-                    if UIS:IsKeyDown(Enum.KeyCode.A) then mv -= cam.CFrame.RightVector * Vector3.new(1,0,1) end
-                    if UIS:IsKeyDown(Enum.KeyCode.D) then mv += cam.CFrame.RightVector * Vector3.new(1,0,1) end
-                    if UIS:IsKeyDown(Enum.KeyCode.Space)     then mv += Vector3.new(0,1,0) end
-                    if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then mv -= Vector3.new(0,1,0) end
+                    -- PC: WASD + Space/Shift
+                    local right = cam.CFrame.RightVector * Vector3.new(1,0,1)
+                    if UIS:IsKeyDown(Enum.KeyCode.W) then mv += look.Magnitude > 0 and look.Unit or Vector3.zero end
+                    if UIS:IsKeyDown(Enum.KeyCode.S) then mv -= look.Magnitude > 0 and look.Unit or Vector3.zero end
+                    if UIS:IsKeyDown(Enum.KeyCode.A) then mv -= right.Magnitude > 0 and right.Unit or Vector3.zero end
+                    if UIS:IsKeyDown(Enum.KeyCode.D) then mv += right.Magnitude > 0 and right.Unit or Vector3.zero end
+                    if UIS:IsKeyDown(Enum.KeyCode.Space)     then mv += Vector3.new(0, 1, 0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then mv -= Vector3.new(0, 1, 0) end
                 end
 
                 bv2.Velocity = mv.Magnitude > 0 and mv.Unit * spd or Vector3.zero
@@ -207,6 +265,8 @@ function PlayerTab.Init(frame, THEME)
         end,
         function()
             if flightConn then flightConn:Disconnect(); flightConn = nil end
+            flyUpDown = 0
+            if THEME.MOBILE then flyBtnHolder.Visible = false end
             local char = LP.Character
             if char then
                 local hum = char:FindFirstChildOfClass("Humanoid")
@@ -222,7 +282,7 @@ function PlayerTab.Init(frame, THEME)
         end
     )
 
-    -- Infinito de vida
+    -- ── GOD MODE ──────────────────────────────────────────────────────────
     local godConn
     makeToggle(scroll, "❤️  God Mode", Color3.fromRGB(180, 40, 40), 13,
         function()
@@ -238,3 +298,4 @@ function PlayerTab.Init(frame, THEME)
 end
 
 return PlayerTab
+
