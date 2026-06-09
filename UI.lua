@@ -1,9 +1,28 @@
 -- UI.lua
 -- Responsabilidade: Criar a janela base, barra de abas e delegar conteúdo aos módulos.
+-- Carregamento via loadstring + GitHub Raw (sem require / ModuleScript).
+
+-- ──────────────────────────────────────────────
+-- ⚙️  CONFIGURAÇÃO — edite apenas aqui
+-- ──────────────────────────────────────────────
+local GITHUB_RAW = "https://raw.githubusercontent.com/MvP_x7/Roblox-Modular-UI/main/Modules/"
 
 local Players       = game:GetService("Players")
+local HttpService   = game:GetService("HttpService")
 local LocalPlayer   = Players.LocalPlayer
 local PlayerGui     = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Carrega um módulo remotamente e retorna a tabela exportada
+local function loadModule(name)
+    local url = GITHUB_RAW .. name .. ".lua"
+    local ok, result = pcall(function()
+        local src = game:HttpGet(url, true)
+        return loadstring(src)()
+    end)
+    if ok then return result end
+    warn("[UI] Falha ao carregar módulo '" .. name .. "': " .. tostring(result))
+    return nil
+end
 
 -- ──────────────────────────────────────────────
 -- Configuração central de abas
@@ -176,7 +195,6 @@ local ContentArea = newFrame({
 -- ──────────────────────────────────────────────
 -- Carregamento de abas
 -- ──────────────────────────────────────────────
-local Modules    = script.Parent:WaitForChild("Modules")
 local tabButtons = {}
 local tabFrames  = {}
 local activeTab  = nil
@@ -222,11 +240,9 @@ for i, tabInfo in ipairs(TABS) do
     })
     tabFrames[tabInfo.name] = frame
 
-    -- Carrega módulo
-    local ok, mod = pcall(function()
-        return require(Modules:WaitForChild(tabInfo.module))
-    end)
-    if ok and type(mod) == "table" and mod.Init then
+    -- Carrega módulo via GitHub
+    local mod = loadModule(tabInfo.module)
+    if mod and mod.Init then
         mod.Init(frame, THEME)
     else
         -- Fallback visual se módulo falhar
