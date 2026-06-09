@@ -164,8 +164,15 @@ local function setMin(s)
     MinBtn.Text = s and "+" or "−"
     if TabBar      then TabBar.Visible      = not s end
     if ContentArea then ContentArea.Visible = not s end
+    -- Ao expandir: ajusta Y antes do tween para não sair da tela pela base
+    if not s then
+        local cvp = workspace.CurrentCamera.ViewportSize
+        local ap  = Window.AbsolutePosition
+        local ny  = math.clamp(ap.Y, 0, cvp.Y - WIN_H)
+        local nx  = math.clamp(ap.X, 0, cvp.X - WIN_W)
+        Window.Position = UDim2.fromOffset(nx, ny)
+    end
     tw(Window, 0.12, {Size = UDim2.fromOffset(WIN_W, s and T.HDR_H or WIN_H)})
-    task.delay(0.13, clampPos)
 end
 MinBtn.Activated:Connect(function() setMin(not minimized) end)
 
