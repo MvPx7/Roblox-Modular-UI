@@ -251,7 +251,10 @@ function PlayerTab.Init(frame, T)
             bv.Name="_fVel"; bv.MaxForce=Vector3.new(1e5,1e5,1e5); bv.Velocity=Vector3.zero
 
             local bg=Instance.new("BodyGyro",hrp)
-            bg.Name="_fGyro"; bg.MaxTorque=Vector3.new(0,4e5,0); bg.D=100; bg.P=1e4
+            bg.Name="_fGyro"
+            bg.MaxTorque=Vector3.new(4e5,4e5,4e5) -- trava TODOS os eixos, sem capotar
+            bg.D=500
+            bg.P=1e5
 
             local SPD=40
 
@@ -301,8 +304,10 @@ function PlayerTab.Init(frame, T)
                 end
 
                 v2.Velocity=mv.Magnitude>0.01 and mv.Unit*SPD or Vector3.zero
+                -- Mantém o personagem sempre upright (sem capotar em colisões)
                 local flatLook=Vector3.new(look.X,0,look.Z)
-                g2.CFrame=CFrame.new(Vector3.zero, flatLook.Magnitude>0 and flatLook or Vector3.new(0,0,-1))
+                local dir=flatLook.Magnitude>0 and flatLook.Unit or Vector3.new(0,0,-1)
+                g2.CFrame=CFrame.fromMatrix(Vector3.zero, dir:Cross(Vector3.new(0,1,0))*-1, Vector3.new(0,1,0))
             end)
         end,
         function()
