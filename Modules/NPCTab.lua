@@ -44,6 +44,11 @@ local function sectionLabel(parent, text, order, theme)
 end
 
 function NPCTab.Init(frame, THEME)
+    -- Normaliza chaves do tema (compatível com UI.lua v2.2 e v2.3)
+    THEME.FONT_BOLD = THEME.FONT_BOLD or THEME.FONTB or Enum.Font.GothamBold
+    THEME.SUBTEXT   = THEME.SUBTEXT   or THEME.MUTED or Color3.fromRGB(120,120,140)
+    THEME.CORNER    = THEME.CORNER    or UDim.new(0, 8)
+
     local RED    = Color3.fromRGB(200, 55, 55)
     local ORANGE = Color3.fromRGB(200, 120, 30)
     local GREEN  = Color3.fromRGB(40,  160, 90)
