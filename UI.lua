@@ -154,7 +154,7 @@ local function setMinimized(state)
         or  UDim2.fromOffset(WIN_W, WIN_H)
 end
 MinBtn.MouseButton1Click:Connect(function() setMinimized(not minimized) end)
-MinBtn.TouchTap:Connect(function()          setMinimized(not minimized) end)
+MinBtn.Activated:Connect(function()         setMinimized(not minimized) end)
 
 -- Arrastar (mouse + touch)
 do
@@ -267,7 +267,7 @@ for i, tabInfo in ipairs(TABS) do
     end
 
     btn.MouseButton1Click:Connect(function() setActiveTab(tabInfo.name) end)
-    btn.TouchTap:Connect(function()          setActiveTab(tabInfo.name) end)
+    btn.Activated:Connect(function()          setActiveTab(tabInfo.name) end)
 end
 
 setActiveTab(TABS[1].name)
