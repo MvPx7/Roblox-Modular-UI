@@ -1,4 +1,7 @@
--- Modules/PlayerTab.lua
+-- Modules/PlayerTab.lua  v2.1
+-- Correções: cleanup correto (F1/F2 param ao fechar), Ctrl desce no voo,
+--            removido WalkSpeed/JumpHeight, ícones corrigidos
+-- ══════════════════════════════════════════════════════════════════════════════
 local PlayerTab = {}
 
 function PlayerTab.Init(frame, T)
@@ -46,9 +49,7 @@ function PlayerTab.Init(frame, T)
         l.Parent=scroll
     end
 
-    -- ── Switch (toggle bonito) ────────────────────────────────────────────────
-    -- Layout: [ label ]  [ pill switch ]
-    -- Retorna { toggle = function(state) } para sync externo (ex: hotkeys)
+    -- ── Switch (toggle) ───────────────────────────────────────────────────────
     local function makeSwitch(labelText, onEnable, onDisable)
         order+=1
         local active=false
@@ -73,7 +74,6 @@ function PlayerTab.Init(frame, T)
         lbl.TextSize=T.MOBILE and 14 or 12
         lbl.TextXAlignment=Enum.TextXAlignment.Left
 
-        -- Pill
         local PW,PH=44,T.MOBILE and 26 or 22
         local pill=Instance.new("Frame",row)
         pill.Size=UDim2.fromOffset(PW,PH)
@@ -92,7 +92,6 @@ function PlayerTab.Init(frame, T)
         knob.BorderSizePixel=0
         corner(knob,UDim.new(0,KS//2))
 
-        -- Área clicável invisível cobre a linha toda
         local btn=Instance.new("TextButton",row)
         btn.Size=UDim2.fromScale(1,1)
         btn.BackgroundTransparency=1
@@ -111,7 +110,7 @@ function PlayerTab.Init(frame, T)
 
         local function toggle(forceState)
             if forceState ~= nil then
-                if forceState == active then return end -- já está no estado certo
+                if forceState == active then return end
                 active = forceState
             else
                 active = not active
@@ -121,118 +120,19 @@ function PlayerTab.Init(frame, T)
         end
 
         btn.Activated:Connect(function() toggle() end)
-
         return { toggle = toggle }
     end
 
-    -- ── Slider ────────────────────────────────────────────────────────────────
-    local function makeSlider(labelText, minV, maxV, defV, onChange)
-        order+=1
-        local container=Instance.new("Frame")
-        container.Size=UDim2.new(1,0,0,T.MOBILE and 54 or 46)
-        container.BackgroundColor3=T.SURFACE
-        container.BorderSizePixel=0
-        container.LayoutOrder=order
-        container.Parent=scroll
-        corner(container, UDim.new(0,8))
-
-        local pad2=Instance.new("UIPadding",container)
-        pad2.PaddingLeft=UDim.new(0,10)
-        pad2.PaddingRight=UDim.new(0,10)
-        pad2.PaddingTop=UDim.new(0,6)
-
-        local lbl=Instance.new("TextLabel",container)
-        lbl.Size=UDim2.new(1,0,0,16)
-        lbl.BackgroundTransparency=1
-        lbl.Text=labelText..":  "..defV
-        lbl.TextColor3=T.TEXT
-        lbl.Font=T.FONT
-        lbl.TextSize=T.MOBILE and 13 or 11
-        lbl.TextXAlignment=Enum.TextXAlignment.Left
-
-        local TH=T.MOBILE and 8 or 5
-        local track=Instance.new("Frame",container)
-        track.Size=UDim2.new(1,0,0,TH)
-        track.Position=UDim2.new(0,0,0, T.MOBILE and 32 or 26)
-        track.BackgroundColor3=Color3.fromRGB(35,35,50)
-        track.BorderSizePixel=0
-        corner(track,UDim.new(0,4))
-
-        local fill=Instance.new("Frame",track)
-        fill.BackgroundColor3=T.ACCENT
-        fill.BorderSizePixel=0
-        fill.Size=UDim2.new((defV-minV)/(maxV-minV),0,1,0)
-        corner(fill,UDim.new(0,4))
-
-        local KS=T.MOBILE and 20 or 12
-        local knob=Instance.new("TextButton",track)
-        knob.Size=UDim2.fromOffset(KS,KS)
-        knob.AnchorPoint=Vector2.new(0.5,0.5)
-        knob.Position=UDim2.new((defV-minV)/(maxV-minV),0,0.5,0)
-        knob.BackgroundColor3=Color3.fromRGB(200,200,220)
-        knob.Text=""
-        knob.BorderSizePixel=0
-        knob.AutoButtonColor=false
-        corner(knob,UDim.new(0,KS//2))
-
-        local dragging=false
-        local function apply(absX)
-            local rel=math.clamp((absX-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1)
-            local val=math.floor(minV+(maxV-minV)*rel)
-            knob.Position=UDim2.new(rel,0,0.5,0)
-            fill.Size=UDim2.new(rel,0,1,0)
-            lbl.Text=labelText..":  "..val
-            onChange(val)
-        end
-
-        knob.MouseButton1Down:Connect(function() dragging=true end)
-        knob.InputBegan:Connect(function(i)
-            if i.UserInputType==Enum.UserInputType.Touch then dragging=true end
-        end)
-        UIS.InputEnded:Connect(function(i)
-            if i.UserInputType==Enum.UserInputType.MouseButton1
-            or i.UserInputType==Enum.UserInputType.Touch then dragging=false end
-        end)
-        UIS.InputChanged:Connect(function(i)
-            if not dragging then return end
-            if i.UserInputType==Enum.UserInputType.MouseMovement
-            or i.UserInputType==Enum.UserInputType.Touch then apply(i.Position.X) end
-        end)
-        track.InputBegan:Connect(function(i)
-            if i.UserInputType==Enum.UserInputType.MouseButton1
-            or i.UserInputType==Enum.UserInputType.Touch then
-                dragging=true; apply(i.Position.X)
-            end
-        end)
-    end
-
     -- ════════════════════════════════════════════════════════════════════════
-    -- CONTEÚDO
+    --  ESTADO COMPARTILHADO
     -- ════════════════════════════════════════════════════════════════════════
-
-    secLabel("Movimento")
-
-    makeSlider("WalkSpeed", 16, 200, 16, function(v)
-        local hum=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed=v end
-    end)
-    makeSlider("JumpHeight", 7, 120, 7, function(v)
-        local hum=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.JumpHeight=v end
-    end)
-
-    secLabel("Habilidades")
-
-    -- ══════════════════════════════════════════════════════════════════════════
-    --  ESTADO COMPARTILHADO  (fly + noclip precisam se ver)
-    -- ══════════════════════════════════════════════════════════════════════════
     local flyActive    = false
     local noclipActive = false
-    local flySpeed     = 40   -- velocidade inicial; + / - mudam isso
+    local flySpeed     = 40
     local flyConn      = nil
     local noclipConn   = nil
 
-    -- ── Label de velocidade de voo (atualizada pelos atalhos) ─────────────────
+    -- Label velocidade de voo
     order += 1
     local flySpeedRow = Instance.new("Frame")
     flySpeedRow.Size = UDim2.new(1,0,0,24)
@@ -249,7 +149,7 @@ function PlayerTab.Init(frame, T)
     flySpeedLbl.TextSize = 10
     flySpeedLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- ── helpers internos ──────────────────────────────────────────────────────
+    -- ── Fly ──────────────────────────────────────────────────────────────────
     local function stopFly()
         flyActive = false
         if flyConn then flyConn:Disconnect(); flyConn = nil end
@@ -276,8 +176,7 @@ function PlayerTab.Init(frame, T)
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then hum.PlatformStand = true end
 
-        -- Remove instâncias antigas se existirem
-        if hrp:FindFirstChild("_fVel") then hrp:FindFirstChild("_fVel"):Destroy() end
+        if hrp:FindFirstChild("_fVel")  then hrp:FindFirstChild("_fVel"):Destroy()  end
         if hrp:FindFirstChild("_fGyro") then hrp:FindFirstChild("_fGyro"):Destroy() end
 
         local bv = Instance.new("BodyVelocity", hrp)
@@ -300,9 +199,8 @@ function PlayerTab.Init(frame, T)
 
             local cam   = workspace.CurrentCamera
             local cf    = cam.CFrame
-            local look  = cf.LookVector   -- direção que a câmera aponta (inclui Y)
+            local look  = cf.LookVector
             local right = cf.RightVector
-            -- Vetor "para cima" puro, independente da câmera
             local up    = Vector3.new(0, 1, 0)
 
             local mv = Vector3.zero
@@ -319,8 +217,7 @@ function PlayerTab.Init(frame, T)
                     mv = camFlat * mdFlat:Dot(camFlat) + rt * mdFlat:Dot(rt)
                 end
             else
-                -- WASD: movimento horizontal relativo à câmera (SEM inclinação Y)
-                local fwd   = Vector3.new(look.X, 0, look.Z)
+                local fwd    = Vector3.new(look.X, 0, look.Z)
                 local strafe = Vector3.new(right.X, 0, right.Z)
                 if fwd.Magnitude    > 0 then fwd    = fwd.Unit    end
                 if strafe.Magnitude > 0 then strafe = strafe.Unit end
@@ -329,20 +226,20 @@ function PlayerTab.Init(frame, T)
                 if UIS:IsKeyDown(Enum.KeyCode.S) then mv -= fwd    end
                 if UIS:IsKeyDown(Enum.KeyCode.A) then mv -= strafe end
                 if UIS:IsKeyDown(Enum.KeyCode.D) then mv += strafe end
-                -- Vertical puro: Space sobe, Shift desce
-                if UIS:IsKeyDown(Enum.KeyCode.Space)     then mv += up end
-                if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then mv -= up end
+                -- CORRIGIDO: Space sobe, LeftControl desce (era LeftShift)
+                if UIS:IsKeyDown(Enum.KeyCode.Space)       then mv += up end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then mv -= up end
             end
 
             bv2.Velocity = mv.Magnitude > 0.01 and mv.Unit * flySpeed or Vector3.zero
 
-            -- Gyro: personagem sempre de frente para onde a câmera aponta (só eixo Y)
             local flatLook = Vector3.new(look.X, 0, look.Z)
             local dir = flatLook.Magnitude > 0 and flatLook.Unit or Vector3.new(0, 0, -1)
             bg2.CFrame = CFrame.new(Vector3.zero, dir)
         end)
     end
 
+    -- ── Noclip ───────────────────────────────────────────────────────────────
     local function stopNoclip()
         noclipActive = false
         if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
@@ -364,46 +261,40 @@ function PlayerTab.Init(frame, T)
         end)
     end
 
-    -- ── Noclip switch (F2) ────────────────────────────────────────────────────
-    local noclipSwitch -- referência ao toggle visual
-    noclipSwitch = makeSwitch("Noclip  [F2]", startNoclip, stopNoclip)
+    -- ── Seção + Switches ─────────────────────────────────────────────────────
+    secLabel("Habilidades")
 
-    -- ── Fly switch (F1) ───────────────────────────────────────────────────────
-    local flySwitch
-    flySwitch = makeSwitch("Voar  [F1]  |  WASD + Space/Shift", startFly, stopFly)
+    local noclipSwitch = makeSwitch("Noclip  [F2]", startNoclip, stopNoclip)
+    local flySwitch    = makeSwitch("Voar  [F1]  |  WASD + Space / Ctrl", startFly, stopFly)
 
-    -- ── Hotkeys globais F1 / F2 / + / - ──────────────────────────────────────
-    UIS.InputBegan:Connect(function(input, gameProcessed)
+    -- ── Hotkey connection — guardada para cleanup ─────────────────────────────
+    -- CORREÇÃO PRINCIPAL: guardar a conexão e desconectar no cleanup
+    local hotkeyConn = UIS.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
 
-        -- F1 → toggle voo
         if input.KeyCode == Enum.KeyCode.F1 then
             if flyActive then
                 stopFly()
-                -- atualiza visual do switch
-                if flySwitch and flySwitch.toggle then flySwitch.toggle(false) end
+                if flySwitch then flySwitch.toggle(false) end
             else
                 startFly()
-                if flySwitch and flySwitch.toggle then flySwitch.toggle(true) end
+                if flySwitch then flySwitch.toggle(true) end
             end
 
-        -- F2 → toggle noclip
         elseif input.KeyCode == Enum.KeyCode.F2 then
             if noclipActive then
                 stopNoclip()
-                if noclipSwitch and noclipSwitch.toggle then noclipSwitch.toggle(false) end
+                if noclipSwitch then noclipSwitch.toggle(false) end
             else
                 startNoclip()
-                if noclipSwitch and noclipSwitch.toggle then noclipSwitch.toggle(true) end
+                if noclipSwitch then noclipSwitch.toggle(true) end
             end
 
-        -- + / = → aumenta velocidade de voo
         elseif input.KeyCode == Enum.KeyCode.Equals
             or input.KeyCode == Enum.KeyCode.KeypadPlus then
             flySpeed = math.min(flySpeed + 10, 300)
             flySpeedLbl.Text = "Velocidade de Voo:  " .. flySpeed .. "  (+ / -)"
 
-        -- - → diminui velocidade de voo
         elseif input.KeyCode == Enum.KeyCode.Minus
             or input.KeyCode == Enum.KeyCode.KeypadMinus then
             flySpeed = math.max(flySpeed - 10, 10)
@@ -411,6 +302,17 @@ function PlayerTab.Init(frame, T)
         end
     end)
 
+    -- ── CLEANUP — registra no sistema global ─────────────────────────────────
+    -- Para fly, noclip E desconecta os hotkeys ao fechar a UI
+    if UI_REGISTRY then
+        UI_REGISTRY.onClose(function()
+            -- Para todas as funções ativas
+            if flyActive    then stopFly()    end
+            if noclipActive then stopNoclip() end
+            -- DESCONECTA hotkeys — impede F1/F2 de funcionar após fechar
+            if hotkeyConn then hotkeyConn:Disconnect(); hotkeyConn = nil end
+        end)
+    end
 end
 
 return PlayerTab
