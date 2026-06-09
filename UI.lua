@@ -1,12 +1,15 @@
 -- UI.lua
 local GITHUB_RAW = "https://raw.githubusercontent.com/MvPx7/Roblox-Modular-UI/main/Modules/"
 
-local Players     = game:GetService("Players")
-local UIS         = game:GetService("UserInputService")
-local TweenService= game:GetService("TweenService")
-local LP          = Players.LocalPlayer
-local PlayerGui   = LP:WaitForChild("PlayerGui")
-local IsMobile    = UIS.TouchEnabled and not UIS.KeyboardEnabled
+local Players      = game:GetService("Players")
+local UIS          = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LP           = Players.LocalPlayer
+local PlayerGui    = LP:WaitForChild("PlayerGui")
+
+-- Detecção mobile mais robusta: TouchEnabled OU tela pequena (executors mobile)
+local vp         = workspace.CurrentCamera.ViewportSize
+local IsMobile   = UIS.TouchEnabled or (vp.X < 900 and vp.Y < 900)
 
 local TABS = {
     { name = "Home",    module = "HomeTab"   },
@@ -17,143 +20,159 @@ local TABS = {
 }
 
 local T = {
-    BG       = Color3.fromRGB(12, 12, 18),
-    SURFACE  = Color3.fromRGB(20, 20, 28),
-    BORDER   = Color3.fromRGB(35, 35, 50),
-    ACCENT   = Color3.fromRGB(99, 102, 241),
-    TEXT     = Color3.fromRGB(220, 220, 235),
-    SUBTEXT  = Color3.fromRGB(100, 100, 120),
-    FONT     = Enum.Font.GothamMedium,
-    FONTB    = Enum.Font.GothamBold,
-    MOBILE   = IsMobile,
-    -- Tamanhos
-    WIN_W    = IsMobile and 300 or 340,
-    WIN_H    = IsMobile and 400 or 360,
-    HDR_H    = IsMobile and 40  or 34,
-    TAB_H    = IsMobile and 36  or 30,
-    CORNER   = UDim.new(0, 10),
+    BG      = Color3.fromRGB(12, 12, 18),
+    SURFACE = Color3.fromRGB(20, 20, 28),
+    BORDER  = Color3.fromRGB(35, 35, 50),
+    ACCENT  = Color3.fromRGB(99, 102, 241),
+    TEXT    = Color3.fromRGB(220, 220, 235),
+    SUBTEXT = Color3.fromRGB(100, 100, 120),
+    ERR     = Color3.fromRGB(220, 60, 60),
+    FONT    = Enum.Font.GothamMedium,
+    FONTB   = Enum.Font.GothamBold,
+    MOBILE  = IsMobile,
+    WIN_W   = IsMobile and 300 or 340,
+    WIN_H   = IsMobile and 390 or 360,
+    HDR_H   = IsMobile and 40  or 34,
+    TAB_H   = IsMobile and 34  or 28,
+    CORNER  = UDim.new(0, 10),
 }
 
--- ── Helpers ──────────────────────────────────────────────────────────────────
+-- ── Helpers ───────────────────────────────────────────────────────────────────
 local function mk(cls, props, parent)
     local o = Instance.new(cls)
-    for k,v in pairs(props) do o[k]=v end
+    for k,v in pairs(props) do o[k] = v end
     if parent then o.Parent = parent end
     return o
 end
 local function corner(p, r)
-    return mk("UICorner",{CornerRadius=r or T.CORNER},p)
+    mk("UICorner", {CornerRadius = r or T.CORNER}, p)
 end
-local function stroke(p, color, thick)
-    return mk("UIStroke",{Color=color or T.BORDER, Thickness=thick or 1, ApplyStrokeMode=Enum.ApplyStrokeMode.Border},p)
-end
-local function tween(obj, t, props)
+local function tw(obj, t, props)
     TweenService:Create(obj, TweenInfo.new(t, Enum.EasingStyle.Quad), props):Play()
 end
 
-local function loadModule(name)
+-- Carrega módulo — mostra erro visível na aba se falhar
+local function loadModule(name, errorFrame)
     local ok, res = pcall(function()
-        return loadstring(game:HttpGet(GITHUB_RAW..name..".lua",true))()
+        return loadstring(game:HttpGet(GITHUB_RAW .. name .. ".lua", true))()
     end)
-    if ok then return res end
-    warn("[UI] "..name.." falhou: "..tostring(res))
+    if ok and res then return res end
+    -- Mostra o erro dentro do frame da aba
+    if errorFrame then
+        mk("TextLabel", {
+            Size = UDim2.new(1,-20,0,0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Position = UDim2.fromOffset(10,10),
+            BackgroundTransparency = 1,
+            Text = "⚠ " .. name .. " falhou:\n" .. tostring(res),
+            TextColor3 = T.ERR,
+            Font = T.FONT,
+            TextSize = 11,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = errorFrame,
+        })
+    end
+    warn("[UI] " .. name .. ": " .. tostring(res))
+    return nil
 end
 
--- ── ScreenGui ────────────────────────────────────────────────────────────────
-local SG = mk("ScreenGui",{
-    Name="MainGui", ResetOnSpawn=false,
-    ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
-    Parent=PlayerGui
+-- ── ScreenGui ─────────────────────────────────────────────────────────────────
+local SG = mk("ScreenGui", {
+    Name = "MainGui", ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    Parent = PlayerGui,
 })
 
--- ── Janela ───────────────────────────────────────────────────────────────────
 local WIN_W, WIN_H = T.WIN_W, T.WIN_H
-local Window = mk("Frame",{
-    Name="Window",
-    Size=UDim2.fromOffset(WIN_W, WIN_H),
-    Position=UDim2.fromScale(0.5,0.5),
-    AnchorPoint=Vector2.new(0.5,0.5),
-    BackgroundColor3=T.BG,
-    BorderSizePixel=0,
-    Parent=SG,
+
+-- ── Janela ────────────────────────────────────────────────────────────────────
+local Window = mk("Frame", {
+    Name = "Window",
+    Size = UDim2.fromOffset(WIN_W, WIN_H),
+    Position = UDim2.fromScale(0.5, 0.5),
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = T.BG,
+    BorderSizePixel = 0,
+    Parent = SG,
 })
 corner(Window)
-stroke(Window, T.BORDER, 1)
+mk("UIStroke", {
+    Color = T.BORDER, Thickness = 1,
+    ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    Parent = Window,
+})
 
--- ── Header ───────────────────────────────────────────────────────────────────
-local Header = mk("Frame",{
-    Size=UDim2.new(1,0,0,T.HDR_H),
-    BackgroundColor3=T.SURFACE,
-    BorderSizePixel=0,
-    Parent=Window,
+-- ── Header ────────────────────────────────────────────────────────────────────
+local Header = mk("Frame", {
+    Size = UDim2.new(1, 0, 0, T.HDR_H),
+    BackgroundColor3 = T.SURFACE,
+    BorderSizePixel = 0,
+    Parent = Window,
 })
 corner(Header)
--- tapa canto inferior do header
-mk("Frame",{
-    Size=UDim2.new(1,0,0,10),
-    Position=UDim2.new(0,0,1,-10),
-    BackgroundColor3=T.SURFACE,
-    BorderSizePixel=0,
-    Parent=Header,
+mk("Frame", { -- tapa canto inferior
+    Size = UDim2.new(1, 0, 0, 10),
+    Position = UDim2.new(0, 0, 1, -10),
+    BackgroundColor3 = T.SURFACE,
+    BorderSizePixel = 0,
+    Parent = Header,
+})
+mk("TextLabel", {
+    Size = UDim2.new(1, -50, 1, 0),
+    Position = UDim2.fromOffset(10, 0),
+    BackgroundTransparency = 1,
+    Text = "✦ Menu",
+    TextColor3 = T.TEXT,
+    Font = T.FONTB,
+    TextSize = IsMobile and 13 or 12,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = Header,
 })
 
-mk("TextLabel",{
-    Size=UDim2.new(1,-50,1,0),
-    Position=UDim2.fromOffset(10,0),
-    BackgroundTransparency=1,
-    Text="✦ Menu",
-    TextColor3=T.TEXT,
-    Font=T.FONTB,
-    TextSize=IsMobile and 14 or 13,
-    TextXAlignment=Enum.TextXAlignment.Left,
-    Parent=Header,
-})
-
--- MinBtn
+-- Botão minimizar
 local minimized = false
-local MinBtn = mk("TextButton",{
-    Size=UDim2.fromOffset(IsMobile and 38 or 30, IsMobile and 26 or 22),
-    AnchorPoint=Vector2.new(1,0.5),
-    Position=UDim2.new(1,-8,0.5,0),
-    BackgroundColor3=T.BORDER,
-    Text="−",
-    TextColor3=T.TEXT,
-    Font=T.FONTB,
-    TextSize=16,
-    BorderSizePixel=0,
-    AutoButtonColor=false,
-    Parent=Header,
+local MinBtn = mk("TextButton", {
+    Size = UDim2.fromOffset(IsMobile and 36 or 28, IsMobile and 24 or 20),
+    AnchorPoint = Vector2.new(1, 0.5),
+    Position = UDim2.new(1, -8, 0.5, 0),
+    BackgroundColor3 = T.BORDER,
+    Text = "−",
+    TextColor3 = T.TEXT,
+    Font = T.FONTB,
+    TextSize = 15,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Parent = Header,
 })
-corner(MinBtn, UDim.new(0,6))
+corner(MinBtn, UDim.new(0, 5))
 
 local TabBar, ContentArea
 
-local function clampWindow()
-    local vp = workspace.CurrentCamera.ViewportSize
-    local ap = Window.AbsolutePosition
-    local as = Window.AbsoluteSize
-    local nx = math.clamp(ap.X, 0, vp.X - as.X)
-    local ny = math.clamp(ap.Y, 0, vp.Y - as.Y)
-    Window.Position = UDim2.fromOffset(nx, ny)
+local function clampPos()
+    local cvp = workspace.CurrentCamera.ViewportSize
+    local ap  = Window.AbsolutePosition
+    local as  = Window.AbsoluteSize
+    Window.Position = UDim2.fromOffset(
+        math.clamp(ap.X, 0, cvp.X - as.X),
+        math.clamp(ap.Y, 0, cvp.Y - as.Y)
+    )
 end
 
-local function setMinimized(s)
+local function setMin(s)
     minimized = s
     MinBtn.Text = s and "+" or "−"
-    if TabBar     then TabBar.Visible     = not s end
-    if ContentArea then ContentArea.Visible= not s end
-    local h = s and T.HDR_H or WIN_H
-    tween(Window, 0.15, {Size=UDim2.fromOffset(WIN_W, h)})
-    task.delay(0.16, clampWindow)
+    if TabBar      then TabBar.Visible      = not s end
+    if ContentArea then ContentArea.Visible = not s end
+    tw(Window, 0.12, {Size = UDim2.fromOffset(WIN_W, s and T.HDR_H or WIN_H)})
+    task.delay(0.13, clampPos)
 end
+MinBtn.Activated:Connect(function() setMin(not minimized) end)
 
-MinBtn.Activated:Connect(function() setMinimized(not minimized) end)
-
--- ── Drag ─────────────────────────────────────────────────────────────────────
+-- ── Drag com clamp ────────────────────────────────────────────────────────────
 do
     local drag, sp, sw
     local function startDrag(pos)
-        -- Não iniciar se clicar no MinBtn
         local bp, bs = MinBtn.AbsolutePosition, MinBtn.AbsoluteSize
         if pos.X>=bp.X and pos.X<=bp.X+bs.X and pos.Y>=bp.Y and pos.Y<=bp.Y+bs.Y then return end
         drag=true; sp=pos; sw=Window.Position
@@ -161,11 +180,13 @@ do
     local function stopDrag() drag=false end
     local function moveDrag(pos)
         if not drag then return end
-        local d=pos-sp
-        local vp=workspace.CurrentCamera.ViewportSize
-        local nx=math.clamp(sw.X.Offset+d.X, 0, vp.X-WIN_W)
-        local ny=math.clamp(sw.Y.Offset+d.Y, 0, vp.Y-(minimized and T.HDR_H or WIN_H))
-        Window.Position=UDim2.fromOffset(nx,ny)
+        local d   = pos - sp
+        local cvp = workspace.CurrentCamera.ViewportSize
+        local curH = minimized and T.HDR_H or WIN_H
+        Window.Position = UDim2.fromOffset(
+            math.clamp(sw.X.Offset + d.X, 0, cvp.X - WIN_W),
+            math.clamp(sw.Y.Offset + d.Y, 0, cvp.Y - curH)
+        )
     end
     Header.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1
@@ -181,82 +202,75 @@ do
     end)
 end
 
--- ── TabBar ───────────────────────────────────────────────────────────────────
-TabBar = mk("Frame",{
-    Size=UDim2.new(1,-16,0,T.TAB_H),
-    Position=UDim2.new(0,8,0,T.HDR_H+4),
-    BackgroundTransparency=1,
-    Parent=Window,
+-- ── TabBar ────────────────────────────────────────────────────────────────────
+TabBar = mk("Frame", {
+    Size = UDim2.new(1, -16, 0, T.TAB_H),
+    Position = UDim2.new(0, 8, 0, T.HDR_H + 4),
+    BackgroundTransparency = 1,
+    Parent = Window,
 })
-local tll=mk("UIListLayout",{
-    FillDirection=Enum.FillDirection.Horizontal,
-    SortOrder=Enum.SortOrder.LayoutOrder,
-    Padding=UDim.new(0,4),
-},TabBar)
+mk("UIListLayout", {
+    FillDirection = Enum.FillDirection.Horizontal,
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    Padding = UDim.new(0, 3),
+    Parent = TabBar,
+})
 
--- ── ContentArea ──────────────────────────────────────────────────────────────
+-- ── ContentArea ───────────────────────────────────────────────────────────────
 local TAB_OFFSET = T.HDR_H + T.TAB_H + 8
-ContentArea = mk("Frame",{
-    Size=UDim2.new(1,0,1,-TAB_OFFSET),
-    Position=UDim2.fromOffset(0,TAB_OFFSET),
-    BackgroundTransparency=1,
-    Parent=Window,
+ContentArea = mk("Frame", {
+    Size = UDim2.new(1, 0, 1, -TAB_OFFSET),
+    Position = UDim2.fromOffset(0, TAB_OFFSET),
+    BackgroundTransparency = 1,
+    Parent = Window,
 })
 
--- ── Tabs ─────────────────────────────────────────────────────────────────────
-local tabButtons, tabFrames, activeTab = {},{},nil
+-- ── Tabs ──────────────────────────────────────────────────────────────────────
+local tabBtns, tabFrames, activeTab = {}, {}, nil
 
 local function setActive(name)
-    if activeTab==name then return end
-    activeTab=name
-    for _,td in ipairs(TABS) do
-        local btn=tabButtons[td.name]
-        local frm=tabFrames[td.name]
-        local on=(td.name==name)
-        tween(btn,0.1,{BackgroundTransparency=on and 0 or 1})
-        btn.TextColor3=on and T.TEXT or T.SUBTEXT
-        if frm then frm.Visible=on end
+    if activeTab == name then return end
+    activeTab = name
+    for _, td in ipairs(TABS) do
+        local btn = tabBtns[td.name]
+        local frm = tabFrames[td.name]
+        local on  = (td.name == name)
+        tw(btn, 0.1, {BackgroundTransparency = on and 0 or 1})
+        btn.TextColor3 = on and T.TEXT or T.SUBTEXT
+        if frm then frm.Visible = on end
     end
 end
 
-for i,td in ipairs(TABS) do
-    local btn=mk("TextButton",{
-        Size=UDim2.new(1/#TABS,-4,1,0),
-        BackgroundColor3=T.ACCENT,
-        BackgroundTransparency=1,
-        Text=td.name,
-        TextColor3=T.SUBTEXT,
-        Font=T.FONT,
-        TextSize=IsMobile and 12 or 11,
-        BorderSizePixel=0,
-        AutoButtonColor=false,
-        LayoutOrder=i,
-        Parent=TabBar,
+for i, td in ipairs(TABS) do
+    local btn = mk("TextButton", {
+        Size = UDim2.new(1/#TABS, -3, 1, 0),
+        BackgroundColor3 = T.ACCENT,
+        BackgroundTransparency = 1,
+        Text = td.name,
+        TextColor3 = T.SUBTEXT,
+        Font = T.FONT,
+        TextSize = IsMobile and 11 or 10,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        LayoutOrder = i,
+        Parent = TabBar,
     })
-    corner(btn,UDim.new(0,6))
-    tabButtons[td.name]=btn
+    corner(btn, UDim.new(0, 5))
+    tabBtns[td.name] = btn
 
-    local frm=mk("Frame",{
-        Size=UDim2.fromScale(1,1),
-        BackgroundTransparency=1,
-        Visible=false,
-        Parent=ContentArea,
+    local frm = mk("Frame", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Visible = false,
+        Parent = ContentArea,
     })
-    tabFrames[td.name]=frm
+    tabFrames[td.name] = frm
 
-    local mod=loadModule(td.module)
+    local mod = loadModule(td.module, frm)
     if mod and mod.Init then
-        mod.Init(frm,T)
-    else
-        mk("TextLabel",{
-            Size=UDim2.fromScale(1,1),
-            BackgroundTransparency=1,
-            Text="⚠ "..td.module.." não encontrado",
-            TextColor3=Color3.fromRGB(200,60,60),
-            Font=T.FONT, TextSize=13,
-            Parent=frm,
-        })
+        pcall(mod.Init, frm, T)
     end
+
     btn.Activated:Connect(function() setActive(td.name) end)
 end
 
