@@ -5,7 +5,7 @@
 -- ──────────────────────────────────────────────
 -- ⚙️  CONFIGURAÇÃO — edite apenas aqui
 -- ──────────────────────────────────────────────
-local GITHUB_RAW = "https://raw.githubusercontent.com/MvP_x7/Roblox-Modular-UI/main/Modules/"
+local GITHUB_RAW = "https://raw.githubusercontent.com/MvPx7/Roblox-Modular-UI/main/Modules/"
 
 local Players       = game:GetService("Players")
 local HttpService   = game:GetService("HttpService")
