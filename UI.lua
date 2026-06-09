@@ -1,4 +1,5 @@
--- UI.lua  v2.4  ─ Sistema de Cleanup global para módulos
+-- UI.lua  v2.5  ─ Sistema de Cleanup global para módulos
+-- Correções: ícones dos botões flutuantes corrigidos para ASCII puro
 -- ══════════════════════════════════════════════════════════════════════════════
 
 local GITHUB_RAW = "https://raw.githubusercontent.com/MvPx7/Roblox-Modular-UI/main/Modules/"
@@ -62,10 +63,10 @@ local T = {
     FONTB   = Enum.Font.GothamBold,
     CORNER  = UDim.new(0, 10),
 }
-T.SUBTEXT  = T.MUTED
+T.SUBTEXT   = T.MUTED
 T.FONT_BOLD = T.FONTB
-T.SUCCESS  = Color3.fromRGB(80, 220, 130)
-T.WARN     = Color3.fromRGB(255, 190, 60)
+T.SUCCESS   = Color3.fromRGB(80, 220, 130)
+T.WARN      = Color3.fromRGB(255, 190, 60)
 
 -- ══════════════════════════════════════════════════════════════════════════════
 --  TABS
@@ -117,7 +118,7 @@ local function loadModule(name, errorFrame)
     if ok3 and res then return res end
 
     if errorFrame then
-        local lines = { "⚠  Falha: " .. name, "", "URL: " .. url, "",
+        local lines = { "!  Falha: " .. name, "", "URL: " .. url, "",
             not ok1 and ("HTTP: " .. tostring(err1)) or nil,
             not ok2 and ("Sintaxe: " .. tostring(fn2)) or nil,
             (ok2 and not ok3) and ("Runtime: " .. tostring(res)) or nil,
@@ -172,12 +173,19 @@ mk("Frame", {Size=UDim2.new(1,0,0,10), Position=UDim2.new(0,0,1,-10),
     BackgroundColor3=T.SURFACE, BorderSizePixel=0, Parent=Header})
 mk("TextLabel", {
     Size=UDim2.new(1,-60,1,0), Position=UDim2.fromOffset(10,0),
-    BackgroundTransparency=1, Text="✦ Menu", TextColor3=T.TEXT,
+    BackgroundTransparency=1, Text="* Menu", TextColor3=T.TEXT,
     Font=T.FONTB, TextSize=cfg.TITLE_S,
     TextXAlignment=Enum.TextXAlignment.Left, Parent=Header,
 })
 
--- Botões flutuantes
+-- ══════════════════════════════════════════════════════════════════════════════
+--  BOTÕES FLUTUANTES
+--  CORRIGIDO: ícones trocados por texto ASCII puro que o Roblox renderiza
+--  corretamente em qualquer fonte.
+--    X  = Fechar   (era "×" — aparecia bugado)
+--    [ ] = Minimizar (era "▣" — aparecia como quadrado bugado)
+--    O  = Recentrar  (era "⌖" — aparecia como "0" bugado)
+-- ══════════════════════════════════════════════════════════════════════════════
 local function makeBtn(label, row, color)
     local b = mk("TextButton", {
         Size=UDim2.fromOffset(BTN_SZ,BTN_SZ),
@@ -188,12 +196,40 @@ local function makeBtn(label, row, color)
     })
     corner(b, UDim.new(0, BTN_SZ>38 and 11 or 7))
     mk("UIStroke", {Color=T.BORDER, Thickness=1, Parent=b})
+    -- Hover sutil
+    b.MouseEnter:Connect(function() tw(b, 0.1, {BackgroundTransparency=0.2}) end)
+    b.MouseLeave:Connect(function() tw(b, 0.1, {BackgroundTransparency=0})   end)
     return b
 end
 
-local CloseBtn  = makeBtn("×", 0, T.CLOSE)
-local ToggleBtn = makeBtn("▣", 1, T.ACCENT)
-local ResetBtn  = makeBtn("⌖", 2, T.SURFACE)
+-- Texto ASCII puro: sem caracteres Unicode especiais que causam bug
+local CloseBtn  = makeBtn("X",   0, T.CLOSE)   -- Fechar
+local ToggleBtn = makeBtn("[ ]", 1, T.ACCENT)  -- Minimizar/Restaurar
+local ResetBtn  = makeBtn("O",   2, T.SURFACE) -- Recentrar janela
+
+-- Tooltip pequeno ao lado dos botões (opcional, ajuda a entender)
+local function addTooltip(btn, text)
+    local tip = mk("TextLabel", {
+        Size = UDim2.fromOffset(70, 20),
+        Position = UDim2.new(1, 4, 0, (BTN_SZ-20)/2),
+        BackgroundColor3 = Color3.fromRGB(8, 8, 14),
+        BackgroundTransparency = 0.2,
+        Text = text,
+        TextColor3 = T.TEXT,
+        Font = T.FONT,
+        TextSize = 9,
+        BorderSizePixel = 0,
+        Visible = false,
+        ZIndex = 25,
+        Parent = btn,
+    })
+    corner(tip, UDim.new(0, 4))
+    btn.MouseEnter:Connect(function() tip.Visible = true  end)
+    btn.MouseLeave:Connect(function() tip.Visible = false end)
+end
+addTooltip(CloseBtn,  "Fechar")
+addTooltip(ToggleBtn, "Minimizar")
+addTooltip(ResetBtn,  "Recentrar")
 
 -- TabBar + ContentArea
 local TabBar = mk("Frame", {
@@ -254,10 +290,10 @@ end
 setActive(TABS[1].name)
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  BOTÕES
+--  AÇÕES DOS BOTÕES
 -- ══════════════════════════════════════════════════════════════════════════════
 
--- FECHAR: roda cleanup de todos os módulos, depois destrói
+-- FECHAR: roda cleanup de todos os módulos (inclui desconectar F1/F2), depois destrói
 CloseBtn.Activated:Connect(function()
     runAllCleanups()
     SG:Destroy()
@@ -268,6 +304,7 @@ local function setMin(s)
     minimized = s
     Window.Visible = not s
     ToggleBtn.BackgroundColor3 = s and T.MUTED or T.ACCENT
+    ToggleBtn.Text = s and ">  <" or "[ ]"
 end
 ToggleBtn.Activated:Connect(function() setMin(not minimized) end)
 
