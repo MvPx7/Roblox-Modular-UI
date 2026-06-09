@@ -1,4 +1,4 @@
--- UI.lua  v2.2  ─ Responsivo + Drag-safe + Quest como módulo externo
+-- UI.lua  v2.3  ─ Corrigido: ícones fixos + botão FECHAR + diagnóstico NPC
 -- ══════════════════════════════════════════════════════════════════════════════
 
 local GITHUB_RAW = "https://raw.githubusercontent.com/MvPx7/Roblox-Modular-UI/main/Modules/"
@@ -11,15 +11,14 @@ local LP           = Players.LocalPlayer
 local PlayerGui    = LP:WaitForChild("PlayerGui")
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  DETECÇÃO DE PLATAFORMA  (re-detectada sempre que a viewport mudar)
+--  DETECÇÃO DE PLATAFORMA
 -- ══════════════════════════════════════════════════════════════════════════════
 local function getPlatform()
-    local vp = workspace.CurrentCamera.ViewportSize
+    local vp    = workspace.CurrentCamera.ViewportSize
     local touch = UIS.TouchEnabled
     local w, h  = vp.X, vp.Y
     local short = math.min(w, h)
     local long  = math.max(w, h)
-
     if not touch and w >= 900 then
         return "PC"
     elseif touch and short >= 600 and long >= 900 then
@@ -30,39 +29,42 @@ local function getPlatform()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  TEMA  (valores por plataforma)
+--  TEMA
 -- ══════════════════════════════════════════════════════════════════════════════
 local PLATFORM_CFG = {
-    PC     = { WIN_W=340, WIN_H=360, HDR_H=34, TAB_H=28, FONT_S=10, TITLE_S=12, BTN=36 },
-    Tablet = { WIN_W=360, WIN_H=380, HDR_H=38, TAB_H=32, FONT_S=11, TITLE_S=13, BTN=40 },
-    Mobile = { WIN_W=300, WIN_H=390, HDR_H=40, TAB_H=34, FONT_S=11, TITLE_S=13, BTN=44 },
+    PC     = { WIN_W=340, WIN_H=360, HDR_H=34, TAB_H=28, FONT_S=10, TITLE_S=12, BTN=32 },
+    Tablet = { WIN_W=360, WIN_H=380, HDR_H=38, TAB_H=32, FONT_S=11, TITLE_S=13, BTN=36 },
+    Mobile = { WIN_W=300, WIN_H=390, HDR_H=40, TAB_H=34, FONT_S=11, TITLE_S=13, BTN=40 },
 }
 
 local T = {
     BG      = Color3.fromRGB(12, 12, 18),
-    SURFACE = Color3.fromRGB(20, 20, 28),
-    BORDER  = Color3.fromRGB(35, 35, 50),
+    SURFACE = Color3.fromRGB(20, 20, 30),
+    BORDER  = Color3.fromRGB(35, 35, 55),
     ACCENT  = Color3.fromRGB(99, 102, 241),
     TEXT    = Color3.fromRGB(220, 220, 235),
-    SUBTEXT = Color3.fromRGB(100, 100, 120),
+    MUTED   = Color3.fromRGB(120, 120, 140),
     ERR     = Color3.fromRGB(220, 60, 60),
-    SUCCESS = Color3.fromRGB(80, 220, 130),
-    WARN    = Color3.fromRGB(255, 190, 60),
+    CLOSE   = Color3.fromRGB(180, 40, 40),
     FONT    = Enum.Font.GothamMedium,
     FONTB   = Enum.Font.GothamBold,
-    CORNER  = UDim.new(0, 10),
 }
+-- aliases de compatibilidade
+T.SUBTEXT = T.MUTED
+T.SUCCESS = Color3.fromRGB(80, 220, 130)
+T.WARN    = Color3.fromRGB(255, 190, 60)
+T.CORNER  = UDim.new(0, 10)
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  TABS  ─ Quest agora é módulo externo igual aos outros
+--  TABS
 -- ══════════════════════════════════════════════════════════════════════════════
 local TABS = {
-    { name = "Home",    module = "HomeTab"   },
-    { name = "NPC",     module = "NPCTab"    },
-    { name = "Player",  module = "PlayerTab" },
-    { name = "Visual",  module = "VisualTab" },
-    { name = "Quest",   module = "QuestTab"  },  -- agora módulo externo
-    { name = "Config",  module = "ConfigTab" },
+    { name = "Home",   module = "HomeTab"   },
+    { name = "NPC",    module = "NPCTab"    },
+    { name = "Player", module = "PlayerTab" },
+    { name = "Visual", module = "VisualTab" },
+    { name = "Quest",  module = "QuestTab"  },
+    { name = "Config", module = "ConfigTab" },
 }
 
 -- ══════════════════════════════════════════════════════════════════════════════
@@ -78,88 +80,109 @@ local function corner(p, r) mk("UICorner", {CornerRadius = r or T.CORNER}, p) en
 local function tw(obj, t, props)
     TweenService:Create(obj, TweenInfo.new(t, Enum.EasingStyle.Quad), props):Play()
 end
-
--- Viewport segura (nunca zero)
 local function getVP()
     local vp = workspace.CurrentCamera.ViewportSize
     return math.max(vp.X, 100), math.max(vp.Y, 100)
 end
-
--- Clamp de posição da janela dentro da viewport
-local function clampWindowPos(x, y, w, h)
+local function clampWin(x, y, w, h)
     local vpW, vpH = getVP()
-    return
-        math.clamp(x, 0, math.max(0, vpW - w)),
-        math.clamp(y, 0, math.max(0, vpH - h))
+    return math.clamp(x, 0, math.max(0, vpW - w)),
+           math.clamp(y, 0, math.max(0, vpH - h))
 end
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  MÓDULOS EXTERNOS
+--  CARREGAR MÓDULO EXTERNO  (com diagnóstico detalhado)
 -- ══════════════════════════════════════════════════════════════════════════════
 local function loadModule(name, errorFrame)
-    local ok, res = pcall(function()
-        return loadstring(game:HttpGet(GITHUB_RAW .. name .. ".lua", true))()
-    end)
-    if ok and res then return res end
+    local url = GITHUB_RAW .. name .. ".lua"
+    local raw, fn, mod
+
+    -- 1) Baixar
+    local ok1, err1 = pcall(function() raw = game:HttpGet(url, true) end)
+    if not ok1 then raw = nil end
+
+    -- 2) Compilar
+    local ok2, fn = pcall(loadstring, raw or "")
+
+    -- 3) Executar
+    local ok3, res
+    if ok2 and type(fn) == "function" then
+        ok3, res = pcall(fn)
+    end
+
+    if ok3 and res then return res end
+
+    -- ── Mostrar erro detalhado no frame da aba ────────────────────────────────
     if errorFrame then
+        local lines = {
+            "⚠  Falha ao carregar: " .. name,
+            "",
+            "URL: " .. url,
+            "",
+            not ok1 and ("HTTP: " .. tostring(err1)) or nil,
+            not ok2 and ("Sintaxe: " .. tostring(fn)) or nil,
+            (ok2 and not ok3) and ("Runtime: " .. tostring(res)) or nil,
+            "",
+            "Verifique se o arquivo existe no GitHub.",
+        }
+        local txt = ""
+        for _, l in ipairs(lines) do
+            if l then txt = txt .. l .. "\n" end
+        end
         mk("TextLabel", {
-            Size = UDim2.new(1,-20,0,0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            Position = UDim2.fromOffset(10,10),
+            Size                = UDim2.new(1, -20, 1, -20),
+            Position            = UDim2.fromOffset(10, 10),
             BackgroundTransparency = 1,
-            Text = "⚠ " .. name .. " falhou:\n" .. tostring(res),
-            TextColor3 = T.ERR,
-            Font = T.FONT,
-            TextSize = 11,
-            TextWrapped = true,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = errorFrame,
+            Text                = txt,
+            TextColor3          = T.ERR,
+            Font                = T.FONT,
+            TextSize            = 11,
+            TextWrapped         = true,
+            TextXAlignment      = Enum.TextXAlignment.Left,
+            TextYAlignment      = Enum.TextYAlignment.Top,
+            Parent              = errorFrame,
         })
     end
-    warn("[UI] " .. name .. ": " .. tostring(res))
+
+    warn("[UI] " .. name .. " falhou. URL: " .. url)
     return nil
 end
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  SCREENGU  +  JANELA
+--  SCREENGUI
 -- ══════════════════════════════════════════════════════════════════════════════
 local SG = mk("ScreenGui", {
-    Name            = "MainGui",
-    ResetOnSpawn    = false,
-    ZIndexBehavior  = Enum.ZIndexBehavior.Sibling,
-    Parent          = PlayerGui,
+    Name           = "MainGui",
+    ResetOnSpawn   = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    Parent         = PlayerGui,
 })
 
 local plat = getPlatform()
 local cfg  = PLATFORM_CFG[plat]
-local WIN_W = cfg.WIN_W
-local WIN_H = cfg.WIN_H
+local WIN_W, WIN_H = cfg.WIN_W, cfg.WIN_H
+local BTN_SZ  = cfg.BTN
+local BTN_PAD = 8
 
--- ── Janela ────────────────────────────────────────────────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════════
+--  JANELA
+-- ══════════════════════════════════════════════════════════════════════════════
 local Window = mk("Frame", {
-    Name             = "Window",
     Size             = UDim2.fromOffset(WIN_W, WIN_H),
-    Position         = UDim2.fromScale(0.5, 0.5),
-    AnchorPoint      = Vector2.new(0.5, 0.5),
     BackgroundColor3 = T.BG,
     BorderSizePixel  = 0,
     Parent           = SG,
 })
 corner(Window)
-mk("UIStroke", {
-    Color            = T.BORDER,
-    Thickness        = 1,
-    ApplyStrokeMode  = Enum.ApplyStrokeMode.Border,
-    Parent           = Window,
-})
+mk("UIStroke", {Color = T.BORDER, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = Window})
 
--- Converte AnchorPoint 0.5/0.5 para posição absoluta ao montar
+-- posição central inicial
 do
     local vpW, vpH = getVP()
-    local cx = math.clamp((vpW - WIN_W) / 2, 0, vpW - WIN_W)
-    local cy = math.clamp((vpH - WIN_H) / 2, 0, vpH - WIN_H)
-    Window.AnchorPoint = Vector2.new(0, 0)
-    Window.Position    = UDim2.fromOffset(cx, cy)
+    Window.Position = UDim2.fromOffset(
+        math.clamp((vpW - WIN_W) / 2, 0, vpW - WIN_W),
+        math.clamp((vpH - WIN_H) / 2, 0, vpH - WIN_H)
+    )
 end
 
 -- ── Header ────────────────────────────────────────────────────────────────────
@@ -170,7 +193,7 @@ local Header = mk("Frame", {
     Parent           = Window,
 })
 corner(Header)
-mk("Frame", {
+mk("Frame", { -- cobre os cantos inferiores arredondados do header
     Size             = UDim2.new(1, 0, 0, 10),
     Position         = UDim2.new(0, 0, 1, -10),
     BackgroundColor3 = T.SURFACE,
@@ -189,42 +212,38 @@ mk("TextLabel", {
     Parent             = Header,
 })
 
--- ── Botão Toggle ──────────────────────────────────────────────────────────────
-local BTN_SZ  = cfg.BTN
-local BTN_PAD = 8
-local ToggleBtn = mk("TextButton", {
-    Size             = UDim2.fromOffset(BTN_SZ, BTN_SZ),
-    Position         = UDim2.fromOffset(BTN_PAD, BTN_PAD),
-    BackgroundColor3 = T.ACCENT,
-    Text             = "×",
-    TextColor3       = T.TEXT,
-    Font             = T.FONTB,
-    TextSize         = BTN_SZ > 40 and 18 or 15,
-    BorderSizePixel  = 0,
-    AutoButtonColor  = false,
-    ZIndex           = 20,
-    Parent           = SG,
-})
-corner(ToggleBtn, UDim.new(0, BTN_SZ > 40 and 12 or 8))
+-- ══════════════════════════════════════════════════════════════════════════════
+--  BOTÕES FLUTUANTES  (todos filhos do SG, posicionados juntos)
+--  Layout vertical:  [×]  (fechar)
+--                    [▣]  (minimizar/restaurar)
+--                    [⌖]  (resetar posição)
+-- ══════════════════════════════════════════════════════════════════════════════
+local function makeBtn(label, row, color)
+    local b = mk("TextButton", {
+        Size             = UDim2.fromOffset(BTN_SZ, BTN_SZ),
+        Position         = UDim2.fromOffset(BTN_PAD, BTN_PAD + (BTN_SZ + 6) * row),
+        BackgroundColor3 = color,
+        Text             = label,
+        TextColor3       = T.TEXT,
+        Font             = T.FONTB,
+        TextSize         = BTN_SZ > 38 and 17 or 14,
+        BorderSizePixel  = 0,
+        AutoButtonColor  = false,
+        ZIndex           = 20,
+        Parent           = SG,
+    })
+    corner(b, UDim.new(0, BTN_SZ > 38 and 11 or 7))
+    mk("UIStroke", {Color = T.BORDER, Thickness = 1, Parent = b})
+    return b
+end
 
--- ── Botão Reset Position ──────────────────────────────────────────────────────
-local ResetBtn = mk("TextButton", {
-    Size             = UDim2.fromOffset(BTN_SZ, BTN_SZ),
-    Position         = UDim2.fromOffset(BTN_PAD, BTN_PAD + BTN_SZ + 6),
-    BackgroundColor3 = T.SURFACE,
-    Text             = "⌖",
-    TextColor3       = T.TEXT,
-    Font             = T.FONTB,
-    TextSize         = BTN_SZ > 40 and 16 or 13,
-    BorderSizePixel  = 0,
-    AutoButtonColor  = false,
-    ZIndex           = 20,
-    Parent           = SG,
-})
-corner(ResetBtn, UDim.new(0, BTN_SZ > 40 and 12 or 8))
-mk("UIStroke", { Color = T.BORDER, Thickness = 1, Parent = ResetBtn })
+local CloseBtn  = makeBtn("×", 0, T.CLOSE)   -- linha 0 → topo
+local ToggleBtn = makeBtn("▣", 1, T.ACCENT)  -- linha 1
+local ResetBtn  = makeBtn("⌖", 2, T.SURFACE) -- linha 2
 
--- ── TabBar ────────────────────────────────────────────────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════════
+--  TABBAR + CONTENTAREA
+-- ══════════════════════════════════════════════════════════════════════════════
 local TabBar = mk("Frame", {
     Size                = UDim2.new(1, -16, 0, cfg.TAB_H),
     Position            = UDim2.new(0, 8, 0, cfg.HDR_H + 4),
@@ -238,12 +257,12 @@ mk("UIListLayout", {
     Parent        = TabBar,
 })
 
--- ── ContentArea ───────────────────────────────────────────────────────────────
 local TAB_OFFSET = cfg.HDR_H + cfg.TAB_H + 8
 local ContentArea = mk("Frame", {
     Size                = UDim2.new(1, 0, 1, -TAB_OFFSET),
     Position            = UDim2.fromOffset(0, TAB_OFFSET),
     BackgroundTransparency = 1,
+    ClipsDescendants    = true,
     Parent              = Window,
 })
 
@@ -259,25 +278,25 @@ local function setActive(name)
         local btn = tabBtns[td.name]
         local frm = tabFrames[td.name]
         local on  = (td.name == name)
-        tw(btn, 0.1, {BackgroundTransparency = on and 0 or 1})
-        btn.TextColor3 = on and T.TEXT or T.SUBTEXT
+        tw(btn, 0.12, {BackgroundTransparency = on and 0 or 1})
+        btn.TextColor3 = on and T.TEXT or T.MUTED
         if frm then frm.Visible = on end
     end
 end
 
 for i, td in ipairs(TABS) do
     local btn = mk("TextButton", {
-        Size             = UDim2.new(1/#TABS, -3, 1, 0),
-        BackgroundColor3 = T.ACCENT,
+        Size                   = UDim2.new(1 / #TABS, -3, 1, 0),
+        BackgroundColor3       = T.ACCENT,
         BackgroundTransparency = 1,
-        Text             = td.name,
-        TextColor3       = T.SUBTEXT,
-        Font             = T.FONT,
-        TextSize         = cfg.FONT_S,
-        BorderSizePixel  = 0,
-        AutoButtonColor  = false,
-        LayoutOrder      = i,
-        Parent           = TabBar,
+        Text                   = td.name,
+        TextColor3             = T.MUTED,
+        Font                   = T.FONT,
+        TextSize               = cfg.FONT_S,
+        BorderSizePixel        = 0,
+        AutoButtonColor        = false,
+        LayoutOrder            = i,
+        Parent                 = TabBar,
     })
     corner(btn, UDim.new(0, 5))
     tabBtns[td.name] = btn
@@ -292,9 +311,7 @@ for i, td in ipairs(TABS) do
 
     if td.module then
         local mod = loadModule(td.module, frm)
-        if mod and mod.Init then
-            pcall(mod.Init, frm, T)
-        end
+        if mod and mod.Init then pcall(mod.Init, frm, T) end
     end
 
     btn.Activated:Connect(function() setActive(td.name) end)
@@ -303,28 +320,25 @@ end
 setActive(TABS[1].name)
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  MINIMIZAR / RESTAURAR
+--  LÓGICA DOS BOTÕES
 -- ══════════════════════════════════════════════════════════════════════════════
-local minimized = false
 
+-- Fechar tudo (destrói o ScreenGui)
+CloseBtn.Activated:Connect(function()
+    SG:Destroy()
+end)
+
+-- Minimizar / restaurar
+local minimized = false
 local function setMin(s)
     minimized = s
-    Window.Visible                  = not s
-    ToggleBtn.Text                  = s and "✦" or "×"
-    ToggleBtn.BackgroundColor3      = s and T.ACCENT or Color3.fromRGB(80, 30, 30)
-    if not s then
-        local px = Window.Position.X.Offset
-        local py = Window.Position.Y.Offset
-        local nx, ny = clampWindowPos(px, py, WIN_W, WIN_H)
-        Window.Position = UDim2.fromOffset(nx, ny)
-    end
+    Window.Visible = not s
+    ToggleBtn.Text = s and "▣" or "▣"
+    ToggleBtn.BackgroundColor3 = s and T.MUTED or T.ACCENT
 end
-
 ToggleBtn.Activated:Connect(function() setMin(not minimized) end)
 
--- ══════════════════════════════════════════════════════════════════════════════
---  RESET POSITION
--- ══════════════════════════════════════════════════════════════════════════════
+-- Reset de posição
 ResetBtn.Activated:Connect(function()
     local vpW, vpH = getVP()
     local nx = math.clamp((vpW - WIN_W) / 2, 0, vpW - WIN_W)
@@ -334,121 +348,89 @@ ResetBtn.Activated:Connect(function()
 end)
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  DRAG  (clampado, mouse + touch)
+--  DRAG
 -- ══════════════════════════════════════════════════════════════════════════════
 do
-    local dragging  = false
-    local startPos  = Vector2.zero
-    local startWin  = Vector2.zero
+    local drag, sPos, sWin = false, Vector2.zero, Vector2.zero
 
-    local function beginDrag(pos)
-        dragging = true
-        startPos = Vector2.new(pos.X, pos.Y)
-        startWin = Vector2.new(Window.Position.X.Offset, Window.Position.Y.Offset)
+    local function begin(pos)
+        drag = true
+        sPos = Vector2.new(pos.X, pos.Y)
+        sWin = Vector2.new(Window.Position.X.Offset, Window.Position.Y.Offset)
     end
-    local function endDrag()
-        dragging = false
-    end
-    local function moveDrag(pos)
-        if not dragging then return end
-        local dx = pos.X - startPos.X
-        local dy = pos.Y - startPos.Y
-        local nx, ny = clampWindowPos(startWin.X + dx, startWin.Y + dy, WIN_W, WIN_H)
+    local function stop() drag = false end
+    local function move(pos)
+        if not drag then return end
+        local dx, dy = pos.X - sPos.X, pos.Y - sPos.Y
+        local nx, ny = clampWin(sWin.X + dx, sWin.Y + dy, WIN_W, WIN_H)
         Window.Position = UDim2.fromOffset(nx, ny)
     end
 
     Header.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            beginDrag(i.Position)
-        end
+        or i.UserInputType == Enum.UserInputType.Touch then begin(i.Position) end
     end)
     Header.InputEnded:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            endDrag()
-        end
+        or i.UserInputType == Enum.UserInputType.Touch then stop() end
     end)
     UIS.InputChanged:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseMovement
-        or i.UserInputType == Enum.UserInputType.Touch then
-            moveDrag(i.Position)
-        end
+        or i.UserInputType == Enum.UserInputType.Touch then move(i.Position) end
     end)
     UIS.InputEnded:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            endDrag()
-        end
+        or i.UserInputType == Enum.UserInputType.Touch then stop() end
     end)
 end
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  RESPONSIVIDADE  — reajusta ao mudar resolução
+--  RESPONSIVIDADE
 -- ══════════════════════════════════════════════════════════════════════════════
 local lastPlat = plat
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
     local newPlat = getPlatform()
-    if newPlat == lastPlat then
-        local px = Window.Position.X.Offset
-        local py = Window.Position.Y.Offset
-        local nx, ny = clampWindowPos(px, py, WIN_W, WIN_H)
-        Window.Position = UDim2.fromOffset(nx, ny)
-        return
+    if newPlat ~= lastPlat then
+        lastPlat = newPlat
+        local nc = PLATFORM_CFG[newPlat]
+        WIN_W, WIN_H = nc.WIN_W, nc.WIN_H
+        BTN_SZ = nc.BTN
+
+        Window.Size  = UDim2.fromOffset(WIN_W, WIN_H)
+        Header.Size  = UDim2.new(1, 0, 0, nc.HDR_H)
+        TabBar.Size  = UDim2.new(1, -16, 0, nc.TAB_H)
+        TabBar.Position = UDim2.new(0, 8, 0, nc.HDR_H + 4)
+        local off = nc.HDR_H + nc.TAB_H + 8
+        ContentArea.Size     = UDim2.new(1, 0, 1, -off)
+        ContentArea.Position = UDim2.fromOffset(0, off)
+
+        -- reposicionar botões flutuantes
+        for row, btn in ipairs({CloseBtn, ToggleBtn, ResetBtn}) do
+            btn.Size     = UDim2.fromOffset(BTN_SZ, BTN_SZ)
+            btn.Position = UDim2.fromOffset(BTN_PAD, BTN_PAD + (BTN_SZ + 6) * (row - 1))
+        end
     end
 
-    lastPlat = newPlat
-    local nc = PLATFORM_CFG[newPlat]
-    WIN_W = nc.WIN_W
-    WIN_H = nc.WIN_H
-
-    Window.Size = UDim2.fromOffset(WIN_W, WIN_H)
-    Header.Size = UDim2.new(1, 0, 0, nc.HDR_H)
-
-    TabBar.Size     = UDim2.new(1, -16, 0, nc.TAB_H)
-    TabBar.Position = UDim2.new(0, 8, 0, nc.HDR_H + 4)
-
-    local newOffset = nc.HDR_H + nc.TAB_H + 8
-    ContentArea.Size     = UDim2.new(1, 0, 1, -newOffset)
-    ContentArea.Position = UDim2.fromOffset(0, newOffset)
-
-    local px = Window.Position.X.Offset
-    local py = Window.Position.Y.Offset
-    local nx, ny = clampWindowPos(px, py, WIN_W, WIN_H)
+    local px, py = Window.Position.X.Offset, Window.Position.Y.Offset
+    local nx, ny = clampWin(px, py, WIN_W, WIN_H)
     Window.Position = UDim2.fromOffset(nx, ny)
-
-    ToggleBtn.Size = UDim2.fromOffset(nc.BTN, nc.BTN)
-    ResetBtn.Size  = UDim2.fromOffset(nc.BTN, nc.BTN)
-    ResetBtn.Position = UDim2.fromOffset(BTN_PAD, BTN_PAD + nc.BTN + 6)
 end)
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  RECUPERAÇÃO AUTOMÁTICA  — verifica a cada 5s se a janela está acessível
+--  RECUPERAÇÃO AUTOMÁTICA  (5s)
 -- ══════════════════════════════════════════════════════════════════════════════
 task.spawn(function()
     while SG.Parent do
         task.wait(5)
         if not minimized then
             local vpW, vpH = getVP()
-            local px = Window.Position.X.Offset
-            local py = Window.Position.Y.Offset
-            local rightEdge  = px + WIN_W
-            local bottomEdge = py + WIN_H
-            local outOfBounds =
-                px > vpW - 30 or
-                py > vpH - 30 or
-                rightEdge  < 30 or
-                bottomEdge < 30
-            if outOfBounds then
-                local nx, ny = clampWindowPos(px, py, WIN_W, WIN_H)
+            local px, py = Window.Position.X.Offset, Window.Position.Y.Offset
+            local outX = px > vpW - 30 or px + WIN_W < 30
+            local outY = py > vpH - 30 or py + WIN_H < 30
+            if outX or outY then
+                local nx, ny = clampWin(px, py, WIN_W, WIN_H)
                 tw(Window, 0.4, {Position = UDim2.fromOffset(nx, ny)})
-                warn("[UI] Janela recuperada automaticamente.")
             end
         end
-        local vpW, vpH = getVP()
-        local bx = math.clamp(BTN_PAD, 0, vpW - BTN_SZ - BTN_PAD)
-        local by = math.clamp(BTN_PAD, 0, vpH - BTN_SZ * 2 - 20)
-        ToggleBtn.Position = UDim2.fromOffset(bx, by)
-        ResetBtn.Position  = UDim2.fromOffset(bx, by + BTN_SZ + 6)
     end
 end)
