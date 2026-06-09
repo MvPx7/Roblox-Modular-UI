@@ -115,6 +115,135 @@ local QUEST_OBJECTIVES = {
 }
 
 -- ══════════════════════════════════════════════════════════════════════════════
+--  ETAPAS DE QUEST  (para quests com múltiplas fases)
+--  Cada etapa tem:
+--    stepId   = identificador único da etapa (string ou número)
+--    label    = nome exibido
+--    path     = caminho do alvo no Workspace (opcional — usa busca dinâmica se nil)
+--    hint     = dica exibida
+--    type     = "npc" | "collect" | "kill" | "return"
+--    names    = lista de nomes para busca dinâmica no Workspace (opcional)
+--
+--  A detecção da etapa atual tenta ler de:
+--    LP:FindFirstChild("QuestData") ou LP:FindFirstChild("PlayerData")
+--    via atributos, StringValues ou NumberValues com o nome da quest
+-- ══════════════════════════════════════════════════════════════════════════════
+local QUEST_STEPS = {
+    ["Necklace"] = {
+        {
+            stepId = 1,
+            label  = "Necklace Location",
+            hint   = "Encontre e colete o colar",
+            type   = "collect",
+            path   = "Workspace.Debris.NecklaceMarker",
+            names  = {"NecklaceMarker", "Necklace", "LostNecklace"},
+        },
+        {
+            stepId = 2,
+            label  = "Return to Niklo",
+            hint   = "Retorne ao Niklo com o colar",
+            type   = "return",
+            -- Adicione aqui o path do NPC Niklo quando souber
+            -- path = "Workspace.DialogueInteractables.Niklo",
+            names  = {"Niklo"},
+        },
+    },
+    ["Lizard"] = {
+        {
+            stepId = 1,
+            label  = "Lizard Location",
+            hint   = "Encontre e mate o lagarto",
+            type   = "kill",
+            path   = "Workspace.Debris.LizardQuestMarker",
+            names  = {"LizardQuestMarker", "Lizard", "GiantLizard"},
+        },
+        {
+            stepId = 2,
+            label  = "Return to Quest Giver",
+            hint   = "Retorne ao NPC de quest",
+            type   = "return",
+            names  = {"QuestGiver", "NPC"},
+        },
+    },
+    -- Adicione mais quests com etapas aqui conforme necessário
+}
+
+-- ══════════════════════════════════════════════════════════════════════════════
+--  DETECTA ETAPA ATUAL DA QUEST
+--  Tenta várias estratégias para ler progresso do PlayerData
+-- ══════════════════════════════════════════════════════════════════════════════
+local function detectQuestStep(questKey)
+    -- Estratégia 1: Verificar se o item de coleta sumiu do Workspace
+    -- (se o NecklaceMarker não existe mais, provavelmente foi coletado)
+    if questKey == "Necklace" then
+        local marker = workspace:FindFirstChild("Debris")
+            and workspace.Debris:FindFirstChild("NecklaceMarker")
+        if not marker then
+            -- Marcador sumiu = item coletado, provavelmente na etapa de retorno
+            return 2
+        end
+        return 1
+    end
+
+    -- Estratégia 2: Ler atributos do PlayerData / QuestData
+    local function tryReadStep(container)
+        if not container then return nil end
+        -- Tenta como atributo direto
+        local attr = container:GetAttribute(questKey .. "_step")
+            or container:GetAttribute(questKey .. "Step")
+            or container:GetAttribute(questKey)
+        if attr and type(attr) == "number" then return attr end
+        -- Tenta como filho StringValue/NumberValue/IntValue
+        local child = container:FindFirstChild(questKey .. "_step")
+            or container:FindFirstChild(questKey .. "Step")
+            or container:FindFirstChild(questKey)
+        if child and (child:IsA("NumberValue") or child:IsA("IntValue")) then
+            return child.Value
+        end
+        if child and child:IsA("StringValue") then
+            return tonumber(child.Value)
+        end
+        return nil
+    end
+
+    -- Tenta diferentes locais onde o jogo pode guardar progresso
+    local locations = {
+        LP:FindFirstChild("QuestData"),
+        LP:FindFirstChild("PlayerData"),
+        LP:FindFirstChild("Quests"),
+        LP:FindFirstChild("Data"),
+        LP:FindFirstChild("leaderstats"),
+    }
+    for _, loc in ipairs(locations) do
+        local step = tryReadStep(loc)
+        if step then return step end
+    end
+
+    -- Estratégia 3: Verificar inventário do personagem / hotbar
+    -- Se o item da quest estiver no inventário, provavelmente foi coletado
+    if questKey == "Necklace" then
+        local backpack = LP:FindFirstChild("Backpack")
+        if backpack then
+            for _, item in ipairs(backpack:GetChildren()) do
+                if item.Name:lower():find("necklace") then
+                    return 2 -- tem o item = etapa de retorno
+                end
+            end
+        end
+        local char = LP.Character
+        if char then
+            for _, item in ipairs(char:GetChildren()) do
+                if item.Name:lower():find("necklace") then
+                    return 2
+                end
+            end
+        end
+    end
+
+    return 1 -- padrão: etapa 1
+end
+
+-- ══════════════════════════════════════════════════════════════════════════════
 --  ESTADO INTERNO
 -- ══════════════════════════════════════════════════════════════════════════════
 local QuestState = {
@@ -550,6 +679,7 @@ local function buildQuestTab(parent, T)
 
     -- Limpa tudo
     local function clearAll()
+        stopStepTracking()
         questClearMarker()
         questClearObjectiveMarkers()
         activeKey = nil
@@ -566,7 +696,91 @@ local function buildQuestTab(parent, T)
         end
     end
 
-    -- Mostra objetivos da quest ativa no painel
+    -- Mostra etapa atual da quest com rastreamento automático
+    local stepTrackConnection = nil
+    local currentTrackedKey   = nil
+    local currentTrackedStep  = nil
+
+    local function stopStepTracking()
+        if stepTrackConnection then
+            stepTrackConnection:Disconnect()
+            stepTrackConnection = nil
+        end
+        currentTrackedKey  = nil
+        currentTrackedStep = nil
+    end
+
+    local function applyStepMarker(qKey, stepNum)
+        local steps = QUEST_STEPS[qKey]
+        if not steps then return false end
+        local step = steps[stepNum] or steps[1]
+        if not step then return false end
+
+        questClearMarker()
+        questClearObjectiveMarkers()
+
+        -- Tenta caminho direto primeiro
+        local obj = step.path and questResolvePath(step.path)
+
+        -- Se não achou, busca dinâmica por nome
+        if not obj and step.names then
+            local found = findObjectivesInWorkspace(step.names)
+            if #found > 0 then obj = found[1].obj end
+        end
+
+        if obj then
+            questApplyMarker(obj, step.label)
+            valTarget.Text = obj.Name
+            valDist.Text   = "calculando..."
+            statusLbl.Text = step.hint
+            statusDot.BackgroundColor3 = stepNum == 1 and T.SUCCESS or Color3.fromRGB(255, 165, 0)
+        else
+            questClearMarker()
+            valTarget.Text = "⚠ " .. (step.names and step.names[1] or "?") .. " — não encontrado"
+            valDist.Text   = "—"
+            statusLbl.Text = "⚠ " .. step.hint .. " (alvo não localizado)"
+            statusDot.BackgroundColor3 = T.ERR
+        end
+
+        valObj.Text = "Etapa " .. stepNum .. "/" .. #steps .. ": " .. step.hint
+        valQuest.Text = QUEST_MAP[qKey] and QUEST_MAP[qKey].label or qKey
+        return true
+    end
+
+    local function startStepTracking(qKey)
+        stopStepTracking()
+        if not QUEST_STEPS[qKey] then return end
+
+        currentTrackedKey = qKey
+        local lastStep = detectQuestStep(qKey)
+        applyStepMarker(qKey, lastStep)
+        currentTrackedStep = lastStep
+
+        -- Monitora mudança de etapa a cada 1s
+        stepTrackConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            -- Só checa a cada ~60 frames (~1s) para não sobrecarregar
+        end)
+
+        task.spawn(function()
+            while currentTrackedKey == qKey and parent.Parent do
+                task.wait(1)
+                if currentTrackedKey ~= qKey then break end
+                local newStep = detectQuestStep(qKey)
+                if newStep ~= currentTrackedStep then
+                    currentTrackedStep = newStep
+                    applyStepMarker(qKey, newStep)
+                    -- Notificação visual de mudança de etapa
+                    statusDot.BackgroundColor3 = Color3.fromRGB(255, 220, 0)
+                    task.wait(0.5)
+                    statusDot.BackgroundColor3 = newStep == 1
+                        and T.SUCCESS
+                        or  Color3.fromRGB(255, 165, 0)
+                end
+            end
+        end)
+    end
+
+
     local function showObjectives(qKey)
         -- Limpa painel anterior
         for _, ch in ipairs(objResultFrame:GetChildren()) do
@@ -751,35 +965,43 @@ local function buildQuestTab(parent, T)
         end)
 
         row.Activated:Connect(function()
-            -- Limpa objetivos anteriores ao trocar de quest
+            -- Limpa anteriores
+            stopStepTracking()
             questClearObjectiveMarkers()
             for _, ch in ipairs(objResultFrame:GetChildren()) do
                 if not ch:IsA("UIListLayout") then ch:Destroy() end
             end
 
-            activeKey = k
+            activeKey      = k
             activeQuestKey = k
+            tw(row, 0.1, {BackgroundColor3 = Color3.fromRGB(30, 50, 35)})
+            dot.BackgroundColor3 = T.SUCCESS
 
-            local obj = questResolvePath(v.path)
-            if obj then
-                questApplyMarker(obj, v.label)
-                dot.BackgroundColor3 = T.SUCCESS
-                statusDot.BackgroundColor3 = T.SUCCESS
-                statusLbl.Text = v.label
-                valQuest.Text  = v.label
-                valTarget.Text = obj.Name
-                valObj.Text    = hasMapped and "Clique em 'Mostrar Objetivos'" or "Não mapeado"
-                tw(row, 0.1, {BackgroundColor3 = Color3.fromRGB(30, 50, 35)})
+            -- Se a quest tem etapas mapeadas, usa rastreamento automático
+            if QUEST_STEPS[k] then
+                startStepTracking(k)
             else
-                questClearMarker()
-                dot.BackgroundColor3 = T.ERR
-                statusDot.BackgroundColor3 = T.ERR
-                statusLbl.Text = "Objeto não encontrado"
-                valQuest.Text  = v.label
-                valTarget.Text = "— não encontrado —"
-                valDist.Text   = "—"
-                valObj.Text    = "—"
-                tw(row, 0.1, {BackgroundColor3 = Color3.fromRGB(50, 20, 20)})
+                -- Comportamento antigo: aponta só para o NPC inicial
+                local obj = questResolvePath(v.path)
+                if obj then
+                    questApplyMarker(obj, v.label)
+                    dot.BackgroundColor3 = T.SUCCESS
+                    statusDot.BackgroundColor3 = T.SUCCESS
+                    statusLbl.Text = v.label
+                    valQuest.Text  = v.label
+                    valTarget.Text = obj.Name
+                    valObj.Text    = hasMapped and "Clique em 'Mostrar Objetivos'" or "Não mapeado"
+                else
+                    questClearMarker()
+                    dot.BackgroundColor3 = T.ERR
+                    statusDot.BackgroundColor3 = T.ERR
+                    statusLbl.Text = "Objeto não encontrado"
+                    valQuest.Text  = v.label
+                    valTarget.Text = "— não encontrado —"
+                    valDist.Text   = "—"
+                    valObj.Text    = "—"
+                    tw(row, 0.1, {BackgroundColor3 = Color3.fromRGB(50, 20, 20)})
+                end
             end
         end)
     end
