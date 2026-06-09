@@ -126,6 +126,8 @@ newLabel({
 })
 
 -- Botão minimizar  ▲ / ▼
+-- FIX: usar apenas Activated (dispara UMA vez em PC e mobile).
+--      MouseButton1Click + Activated juntos causavam duplo disparo.
 local minimized = false
 local MinBtn = newButton({
     Size             = UDim2.fromOffset(IsMobile and 44 or 36, IsMobile and 34 or 28),
@@ -137,26 +139,29 @@ local MinBtn = newButton({
     Font             = THEME.FONT_BOLD,
     TextSize         = 14,
     BorderSizePixel  = 0,
+    AutoButtonColor  = false,
     Parent           = Header,
 })
 corner(MinBtn, UDim.new(0,6))
 
-local TabBar     -- declarado antes do minimize para poder referenciar
+local TabBar
 local ContentArea
 
 local function setMinimized(state)
     minimized = state
     MinBtn.Text = minimized and "▲" or "▼"
-    if TabBar     then TabBar.Visible     = not minimized end
+    if TabBar      then TabBar.Visible      = not minimized end
     if ContentArea then ContentArea.Visible = not minimized end
     Window.Size = minimized
         and UDim2.fromOffset(WIN_W, THEME.HEADER_H)
         or  UDim2.fromOffset(WIN_W, WIN_H)
 end
-MinBtn.MouseButton1Click:Connect(function() setMinimized(not minimized) end)
-MinBtn.Activated:Connect(function()         setMinimized(not minimized) end)
+
+-- Apenas Activated — funciona em PC (mouse) e mobile (touch) sem duplicar
+MinBtn.Activated:Connect(function() setMinimized(not minimized) end)
 
 -- Arrastar (mouse + touch)
+-- FIX: ignora input no MinBtn para não arrastar ao tentar minimizar
 do
     local dragging, startPos, startWin
     local function beginDrag(pos)
@@ -171,8 +176,17 @@ do
             startWin.Y.Scale, startWin.Y.Offset + d.Y)
     end
     Header.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then beginDrag(i.Position) end
-        if i.UserInputType == Enum.UserInputType.Touch         then beginDrag(i.Position) end
+        -- Ignora se o clique foi no botão minimizar
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            -- Só inicia drag se não estiver sobre o MinBtn
+            local mPos = i.Position
+            local bPos = MinBtn.AbsolutePosition
+            local bSz  = MinBtn.AbsoluteSize
+            local overBtn = mPos.X >= bPos.X and mPos.X <= bPos.X + bSz.X
+                        and mPos.Y >= bPos.Y and mPos.Y <= bPos.Y + bSz.Y
+            if not overBtn then beginDrag(mPos) end
+        end
     end)
     Header.InputEnded:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
@@ -236,6 +250,7 @@ for i, tabInfo in ipairs(TABS) do
         Font                   = THEME.FONT,
         TextSize               = IsMobile and 14 or 13,
         BorderSizePixel        = 0,
+        AutoButtonColor        = false,
         LayoutOrder            = i,
         Parent                 = TabBar,
     })
@@ -266,8 +281,8 @@ for i, tabInfo in ipairs(TABS) do
         })
     end
 
-    btn.MouseButton1Click:Connect(function() setActiveTab(tabInfo.name) end)
-    btn.Activated:Connect(function()          setActiveTab(tabInfo.name) end)
+    -- FIX: apenas Activated, sem MouseButton1Click duplicado
+    btn.Activated:Connect(function() setActiveTab(tabInfo.name) end)
 end
 
 setActiveTab(TABS[1].name)
