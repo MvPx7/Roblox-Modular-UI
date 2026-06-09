@@ -1,151 +1,246 @@
 -- Modules/VisualTab.lua
--- Modificações visuais: ESP, iluminação, FOV, etc.
 
 local VisualTab = {}
 
-function VisualTab.Init(frame, THEME)
-    local LP = game.Players.LocalPlayer
+function VisualTab.Init(frame, T)
+    local LP      = game.Players.LocalPlayer
+    local Players = game:GetService("Players")
+    local RS      = game:GetService("RunService")
+    local TS      = game:GetService("TweenService")
 
     local function corner(p, r)
-        local c = Instance.new("UICorner"); c.CornerRadius = r or THEME.CORNER; c.Parent = p
+        local c = Instance.new("UICorner"); c.CornerRadius = r or T.CORNER; c.Parent = p
     end
+    local function tw(o, t, p) TS:Create(o, TweenInfo.new(t, Enum.EasingStyle.Quad), p):Play() end
 
-    local function secLabel(parent, text, order)
-        local l = Instance.new("TextLabel")
-        l.Size = UDim2.new(1, 0, 0, 18); l.BackgroundTransparency = 1
-        l.Text = text; l.TextColor3 = THEME.SUBTEXT
-        l.Font = THEME.FONT_BOLD; l.TextSize = 11
-        l.TextXAlignment = Enum.TextXAlignment.Left
-        l.LayoutOrder = order; l.Parent = parent
-    end
-
-    -- Toggle button que mantém estado ON/OFF
-    local function makeToggle(parent, text, order, onEnable, onDisable)
-        local OFF = Color3.fromRGB(45, 45, 60)
-        local ON  = THEME.ACCENT
-        local active = false
-
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 36)
-        row.BackgroundColor3 = OFF
-        row.BorderSizePixel = 0
-        row.LayoutOrder = order
-        row.Parent = parent
-        corner(row)
-
-        local lbl = Instance.new("TextLabel", row)
-        lbl.Size = UDim2.new(1, -60, 1, 0)
-        lbl.Position = UDim2.fromOffset(12, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = text
-        lbl.TextColor3 = THEME.TEXT
-        lbl.Font = THEME.FONT
-        lbl.TextSize = 13
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-
-        local pill = Instance.new("Frame", row)
-        pill.Size = UDim2.fromOffset(42, 22)
-        pill.AnchorPoint = Vector2.new(1, 0.5)
-        pill.Position = UDim2.new(1, -10, 0.5, 0)
-        pill.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-        pill.BorderSizePixel = 0
-        corner(pill, UDim.new(0, 11))
-
-        local knob = Instance.new("Frame", pill)
-        knob.Size = UDim2.fromOffset(16, 16)
-        knob.Position = UDim2.fromOffset(3, 3)
-        knob.BackgroundColor3 = THEME.TEXT
-        knob.BorderSizePixel = 0
-        corner(knob, UDim.new(0, 8))
-
-        local btn = Instance.new("TextButton", row)
-        btn.Size = UDim2.fromScale(1, 1)
-        btn.BackgroundTransparency = 1
-        btn.Text = ""
-
-        btn.MouseButton1Click:Connect(function()
-            active = not active
-            if active then
-                row.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-                pill.BackgroundColor3 = THEME.ACCENT
-                knob.Position = UDim2.fromOffset(23, 3)
-                if onEnable then onEnable() end
-            else
-                row.BackgroundColor3 = OFF
-                pill.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-                knob.Position = UDim2.fromOffset(3, 3)
-                if onDisable then onDisable() end
-            end
-        end)
-        return btn
-    end
-
-    -- ── Scroll ───────────────────────────────────────────────────────────
+    -- ── Scroll ────────────────────────────────────────────────────────────────
     local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.fromScale(1, 1); scroll.BackgroundTransparency = 1
-    scroll.BorderSizePixel = 0; scroll.ScrollBarThickness = 3
-    scroll.ScrollBarImageColor3 = THEME.ACCENT
+    scroll.Size = UDim2.fromScale(1,1); scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0; scroll.ScrollBarThickness = 2
+    scroll.ScrollBarImageColor3 = T.ACCENT
     scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     scroll.CanvasSize = UDim2.new(); scroll.Parent = frame
-    Instance.new("UIListLayout", scroll).Padding = UDim.new(0, 8)
+    local ll = Instance.new("UIListLayout", scroll); ll.Padding = UDim.new(0,6)
     local pad = Instance.new("UIPadding", scroll)
-    pad.PaddingTop = UDim.new(0,10); pad.PaddingLeft = UDim.new(0,12)
-    pad.PaddingRight = UDim.new(0,12); pad.PaddingBottom = UDim.new(0,10)
+    pad.PaddingTop=UDim.new(0,8); pad.PaddingLeft=UDim.new(0,10)
+    pad.PaddingRight=UDim.new(0,10); pad.PaddingBottom=UDim.new(0,8)
 
-    -- ── ESP de jogadores ─────────────────────────────────────────────────
-    secLabel(scroll, "ESP", 1)
-    local espConn
-    makeToggle(scroll, "Player ESP  (caixas)", 2,
-        function() -- enable
-            espConn = game:GetService("RunService").Heartbeat:Connect(function()
-                for _, plr in ipairs(game.Players:GetPlayers()) do
-                    if plr ~= LP and plr.Character then
-                        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            local tag = hrp:FindFirstChild("_espTag")
-                            if not tag then
-                                tag = Instance.new("SelectionBox")
-                                tag.Name = "_espTag"
-                                tag.Adornee = plr.Character
-                                tag.Color3 = Color3.fromRGB(255, 50, 50)
-                                tag.LineThickness = 0.05
-                                tag.SurfaceTransparency = 0.8
-                                tag.SurfaceColor3 = Color3.fromRGB(255, 50, 50)
-                                tag.Parent = workspace
+    local order = 0
+    local function secLabel(text)
+        order += 1
+        local l = Instance.new("TextLabel")
+        l.Size = UDim2.new(1,0,0,14); l.BackgroundTransparency = 1
+        l.Text = string.upper(text); l.TextColor3 = T.SUBTEXT
+        l.Font = T.FONTB; l.TextSize = 9
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.LayoutOrder = order; l.Parent = scroll
+    end
+
+    -- ── Switch (igual ao PlayerTab) ───────────────────────────────────────────
+    local function makeSwitch(labelText, onEnable, onDisable)
+        order += 1
+        local active = false
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1,0,0, T.MOBILE and 42 or 34)
+        row.BackgroundColor3 = T.SURFACE
+        row.BorderSizePixel = 0
+        row.LayoutOrder = order; row.Parent = scroll
+        corner(row, UDim.new(0,8))
+
+        local p2 = Instance.new("UIPadding", row)
+        p2.PaddingLeft = UDim.new(0,10); p2.PaddingRight = UDim.new(0,10)
+
+        local lbl = Instance.new("TextLabel", row)
+        lbl.Size = UDim2.new(1,-52,1,0); lbl.BackgroundTransparency = 1
+        lbl.Text = labelText; lbl.TextColor3 = T.TEXT
+        lbl.Font = T.FONT; lbl.TextSize = T.MOBILE and 14 or 12
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local PW,PH = 44, T.MOBILE and 26 or 22
+        local pill = Instance.new("Frame", row)
+        pill.Size = UDim2.fromOffset(PW,PH)
+        pill.AnchorPoint = Vector2.new(1,0.5)
+        pill.Position = UDim2.new(1,0,0.5,0)
+        pill.BackgroundColor3 = Color3.fromRGB(45,45,60)
+        pill.BorderSizePixel = 0
+        corner(pill, UDim.new(0,PH//2))
+
+        local KS = PH-6
+        local knob = Instance.new("Frame", pill)
+        knob.Size = UDim2.fromOffset(KS,KS)
+        knob.AnchorPoint = Vector2.new(0,0.5)
+        knob.Position = UDim2.new(0,3,0.5,0)
+        knob.BackgroundColor3 = Color3.fromRGB(120,120,140)
+        knob.BorderSizePixel = 0
+        corner(knob, UDim.new(0,KS//2))
+
+        local btn = Instance.new("TextButton", row)
+        btn.Size = UDim2.fromScale(1,1); btn.BackgroundTransparency = 1
+        btn.Text = ""; btn.AutoButtonColor = false
+
+        local function toggle()
+            active = not active
+            if active then
+                tw(pill,0.15,{BackgroundColor3=T.ACCENT})
+                tw(knob,0.15,{Position=UDim2.new(1,-(KS+3),0.5,0),BackgroundColor3=Color3.new(1,1,1)})
+                onEnable()
+            else
+                tw(pill,0.15,{BackgroundColor3=Color3.fromRGB(45,45,60)})
+                tw(knob,0.15,{Position=UDim2.new(0,3,0.5,0),BackgroundColor3=Color3.fromRGB(120,120,140)})
+                onDisable()
+            end
+        end
+        btn.Activated:Connect(toggle)
+    end
+
+    -- ════════════════════════════════════════════════════════════════════════
+    -- ESP
+    -- ════════════════════════════════════════════════════════════════════════
+    secLabel("ESP")
+
+    -- Cores por time/distância
+    local ESP_COLOR   = Color3.fromRGB(255, 80,  80)   -- inimigo / padrão
+    local ESP_OUTLINE = Color3.fromRGB(0,   0,   0)
+
+    -- Cria o ESP num character confirmado como player real
+    local function attachESP(plr, char)
+        if char:FindFirstChild("_espHL") then return end
+
+        -- Highlight — outline suave no contorno, sem caixa
+        local hl = Instance.new("Highlight")
+        hl.Name               = "_espHL"
+        hl.Adornee            = char
+        hl.FillTransparency   = 1          -- sem preenchimento colorido
+        hl.OutlineTransparency= 0          -- outline totalmente visível
+        hl.OutlineColor       = ESP_COLOR
+        hl.DepthMode          = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Parent             = char
+
+        -- Billboard com nome + distância
+        local bb = Instance.new("BillboardGui")
+        bb.Name           = "_espBB"
+        bb.Size           = UDim2.fromOffset(120, 36)
+        bb.StudsOffset    = Vector3.new(0, 3.2, 0)
+        bb.AlwaysOnTop    = true
+        bb.LightInfluence = 0
+        bb.Adornee        = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
+        bb.Parent         = char
+
+        local nameLbl = Instance.new("TextLabel", bb)
+        nameLbl.Size               = UDim2.new(1,0,0.55,0)
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Text               = plr.DisplayName
+        nameLbl.TextColor3         = ESP_COLOR
+        nameLbl.Font               = Enum.Font.GothamBold
+        nameLbl.TextSize           = 13
+        nameLbl.TextStrokeTransparency = 0.4
+        nameLbl.TextStrokeColor3   = Color3.new(0,0,0)
+
+        local distLbl = Instance.new("TextLabel", bb)
+        distLbl.Name               = "_espDist"
+        distLbl.Size               = UDim2.new(1,0,0.45,0)
+        distLbl.Position           = UDim2.new(0,0,0.55,0)
+        distLbl.BackgroundTransparency = 1
+        distLbl.Text               = ""
+        distLbl.TextColor3         = Color3.fromRGB(200,200,200)
+        distLbl.Font               = Enum.Font.Gotham
+        distLbl.TextSize           = 11
+        distLbl.TextStrokeTransparency = 0.5
+        distLbl.TextStrokeColor3   = Color3.new(0,0,0)
+    end
+
+    local function removeESP(char)
+        local hl = char:FindFirstChild("_espHL")
+        local bb = char:FindFirstChild("_espBB")
+        if hl then hl:Destroy() end
+        if bb then bb:Destroy() end
+    end
+
+    local espConn, espDistConn
+    makeSwitch("Player ESP",
+        function()
+            -- Aplica em quem já está no servidor
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LP and plr.UserId > 0 and plr.Character then
+                    attachESP(plr, plr.Character)
+                end
+            end
+            -- Aplica quando um player faz respawn
+            espConn = Players.PlayerAdded:Connect(function(plr)
+                plr.CharacterAdded:Connect(function(char)
+                    task.wait(0.5)
+                    if plr.UserId > 0 then attachESP(plr, char) end
+                end)
+            end)
+            -- Atualiza distância a cada frame
+            espDistConn = RS.Heartbeat:Connect(function()
+                local myHRP = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr ~= LP and plr.UserId > 0 and plr.Character then
+                        local bb = plr.Character:FindFirstChild("_espBB")
+                        if bb then
+                            local dl = bb:FindFirstChild("_espDist")
+                            if dl and myHRP then
+                                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                                if hrp then
+                                    local dist = math.floor((hrp.Position - myHRP.Position).Magnitude)
+                                    dl.Text = dist.."m"
+                                end
                             end
                         end
+                        -- Garante que recém-spawnados também ganhem ESP
+                        attachESP(plr, plr.Character)
                     end
                 end
             end)
         end,
-        function() -- disable
-            if espConn then espConn:Disconnect() end
-            for _, obj in ipairs(workspace:GetChildren()) do
-                if obj:IsA("SelectionBox") and obj.Name == "_espTag" then obj:Destroy() end
+        function()
+            if espConn     then espConn:Disconnect();     espConn     = nil end
+            if espDistConn then espDistConn:Disconnect(); espDistConn = nil end
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr.Character then removeESP(plr.Character) end
             end
         end
     )
 
-    makeToggle(scroll, "Fullbright", 3,
+    -- ════════════════════════════════════════════════════════════════════════
+    -- ILUMINAÇÃO
+    -- ════════════════════════════════════════════════════════════════════════
+    secLabel("Iluminação")
+
+    local Lighting = game:GetService("Lighting")
+    local origBright, origClock
+
+    makeSwitch("Fullbright",
         function()
-            game:GetService("Lighting").Brightness = 10
-            game:GetService("Lighting").ClockTime  = 14
+            origBright = Lighting.Brightness
+            origClock  = Lighting.ClockTime
+            Lighting.Brightness = 10
+            Lighting.ClockTime  = 14
         end,
         function()
-            game:GetService("Lighting").Brightness = 1
-            game:GetService("Lighting").ClockTime  = 14
+            Lighting.Brightness = origBright or 1
+            Lighting.ClockTime  = origClock  or 14
         end
     )
 
-    -- ── Câmera ───────────────────────────────────────────────────────────
-    secLabel(scroll, "CÂMERA", 10)
+    -- ════════════════════════════════════════════════════════════════════════
+    -- CÂMERA
+    -- ════════════════════════════════════════════════════════════════════════
+    secLabel("Câmera")
 
-    makeToggle(scroll, "FOV Alargado  (90→120)", 11,
-        function() workspace.CurrentCamera.FieldOfView = 120 end,
-        function() workspace.CurrentCamera.FieldOfView = 70  end
+    local origFOV
+    makeSwitch("FOV Alargado",
+        function()
+            origFOV = workspace.CurrentCamera.FieldOfView
+            workspace.CurrentCamera.FieldOfView = 110
+        end,
+        function()
+            workspace.CurrentCamera.FieldOfView = origFOV or 70
+        end
     )
 
-    makeToggle(scroll, "Câmera Shoulder  (over-shoulder)", 12,
+    makeSwitch("Câmera Shoulder",
         function()
             workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
             LP.CameraMode = Enum.CameraMode.LockFirstPerson
