@@ -1,8 +1,22 @@
--- UI.lua  v4.0  ─ Sidebar vertical + lazy loading + drag otimizado
+-- UI.lua  v4.1  ─ Sidebar vertical + lazy loading + drag otimizado
 -- Layout: Header no topo | Sidebar esquerda (abas) | ContentArea direita
+-- Correções v4.1:
+--   • Proteção contra GUI duplicada
+--   • Registry.closed para evitar callbacks perdidos
+--   • loadModule com timeout (8s) e mensagem de erro detalhada
+--   • Spinner animado no loading
+--   • dragConn desconectado imediatamente no endDrag
+--   • Drag bloqueado quando minimizado
+--   • ActiveBar corrigida para considerar scroll
+--   • Conexão ViewportSize desconectada ao fechar
+--   • Loop de recuperação usa snapshot de WIN_W/WIN_H
+--   • Módulo já destruído não recebe Init
 -- ══════════════════════════════════════════════════════════════════════════════
 
+local VERSION    = "4.1"
+local TITLE      = "Menu"
 local GITHUB_RAW = "https://raw.githubusercontent.com/MvPx7/Roblox-Modular-UI/main/Modules/"
+local MODULE_TIMEOUT = 8   -- segundos antes de desistir do HTTP
 
 local Players      = game:GetService("Players")
 local UIS          = game:GetService("UserInputService")
@@ -12,15 +26,35 @@ local LP           = Players.LocalPlayer
 local PlayerGui    = LP:WaitForChild("PlayerGui")
 
 -- ══════════════════════════════════════════════════════════════════════════════
+--  PROTEÇÃO CONTRA GUI DUPLICADA
+-- ══════════════════════════════════════════════════════════════════════════════
+do
+    local existing = PlayerGui:FindFirstChild("MainGui")
+    if existing then existing:Destroy() end
+end
+
+-- ══════════════════════════════════════════════════════════════════════════════
 --  CLEANUP REGISTRY
 -- ══════════════════════════════════════════════════════════════════════════════
-local Registry = { _fns = {} }
-function Registry.onClose(fn) table.insert(Registry._fns, fn) end
+local Registry = { _fns = {}, closed = false }
+
+function Registry.onClose(fn)
+    if Registry.closed then
+        -- UI já fechou: executa imediatamente para não perder o cleanup
+        pcall(fn)
+    else
+        table.insert(Registry._fns, fn)
+    end
+end
+
 function Registry.runAll()
+    Registry.closed = true
     for _, fn in ipairs(Registry._fns) do pcall(fn) end
     Registry._fns = {}
 end
-UI_REGISTRY = Registry  -- alias retrocompatível
+
+-- Alias global retrocompatível (módulos que usam UI_REGISTRY continuam funcionando)
+_G.UI_REGISTRY = Registry
 
 -- ══════════════════════════════════════════════════════════════════════════════
 --  PLATAFORMA
@@ -54,7 +88,7 @@ local T = {
     BG        = Color3.fromRGB(10, 10, 16),
     SURFACE   = Color3.fromRGB(18, 18, 28),
     SURFACE2  = Color3.fromRGB(22, 22, 35),
-    SIDEBAR   = Color3.fromRGB(14, 14, 22),   -- sidebar ligeiramente diferente do BG
+    SIDEBAR   = Color3.fromRGB(14, 14, 22),
     BORDER    = Color3.fromRGB(38, 38, 62),
     BORDER2   = Color3.fromRGB(55, 55, 85),
 
@@ -77,18 +111,17 @@ local T = {
     CORNER_XS = UDim.new(0, 4),
 }
 T.FONT_BOLD = T.FONTB
-T.SUBTEXT   = T.SUBTEXT
 
 -- ══════════════════════════════════════════════════════════════════════════════
 --  TABS
 -- ══════════════════════════════════════════════════════════════════════════════
 local TABS = {
-    { name = "Home",   icon = "~",  module = "HomeTab"   },
-    { name = "NPC",    icon = "*",  module = "NPCTab"    },
-    { name = "Player", icon = "@",  module = "PlayerTab" },
-    { name = "Visual", icon = "#",  module = "VisualTab" },
-    { name = "Quest",  icon = "!",  module = "QuestTab"  },
-    { name = "Config", icon = "=",  module = "ConfigTab" },
+    { name = "Home",   icon = "⌂",  module = "HomeTab"   },
+    { name = "NPC",    icon = "☻",  module = "NPCTab"    },
+    { name = "Player", icon = "♟",  module = "PlayerTab" },
+    { name = "Visual", icon = "◈",  module = "VisualTab" },
+    { name = "Quest",  icon = "★",  module = "QuestTab"  },
+    { name = "Config", icon = "⚙",  module = "ConfigTab" },
 }
 
 -- ══════════════════════════════════════════════════════════════════════════════
@@ -117,39 +150,168 @@ local function clampWin(x, y, w, h)
     return math.clamp(x, 0, math.max(0,vpW-w)),
            math.clamp(y, 0, math.max(0,vpH-h))
 end
+-- Verifica se uma instância ainda existe e não foi destruída
+local function alive(inst)
+    return inst and inst.Parent ~= nil
+end
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  CARREGAR MÓDULO (lazy)
+--  SPINNER DE LOADING
+-- ══════════════════════════════════════════════════════════════════════════════
+local function makeSpinner(parent, tabName)
+    local holder = mk("Frame",{
+        Size=UDim2.fromScale(1,1),
+        BackgroundTransparency=1,
+        ZIndex=2, Parent=parent,
+    })
+    local dots = {"⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"}
+    local spinLbl = mk("TextLabel",{
+        Size=UDim2.new(1,0,0,24),
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.new(0.5,0,0.5,-8),
+        BackgroundTransparency=1,
+        Text=dots[1],
+        TextColor3=T.ACCENT, Font=T.FONTB, TextSize=22,
+        ZIndex=3, Parent=holder,
+    })
+    mk("TextLabel",{
+        Size=UDim2.new(1,-16,0,18),
+        AnchorPoint=Vector2.new(0.5,0),
+        Position=UDim2.new(0.5,0,0.5,20),
+        BackgroundTransparency=1,
+        Text="Carregando "..tabName.."...",
+        TextColor3=T.MUTED, Font=T.FONT, TextSize=10,
+        ZIndex=3, Parent=holder,
+    })
+    local frame = 1
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        if not alive(spinLbl) then conn:Disconnect() return end
+        frame = frame % #dots + 1
+        spinLbl.Text = dots[frame]
+    end)
+    -- retorna o holder e a conexão para que possam ser destruídos depois
+    return holder, conn
+end
+
+-- ══════════════════════════════════════════════════════════════════════════════
+--  TELA DE ERRO DE MÓDULO
+-- ══════════════════════════════════════════════════════════════════════════════
+local function showModuleError(parent, name, url, errHTTP, errSyntax, errRuntime)
+    -- Limpa filhos anteriores (ex: spinner)
+    for _, c in ipairs(parent:GetChildren()) do c:Destroy() end
+
+    local bg = mk("Frame",{
+        Size=UDim2.new(1,-16,1,-16),
+        Position=UDim2.fromOffset(8,8),
+        BackgroundColor3=Color3.fromRGB(30,10,10),
+        BackgroundTransparency=0.3,
+        ZIndex=2, Parent=parent,
+    })
+    corner(bg, T.CORNER_XS)
+    stroke(bg, T.ERR, 1)
+
+    -- Ícone de erro
+    mk("TextLabel",{
+        Size=UDim2.new(1,0,0,28),
+        Position=UDim2.fromOffset(0,10),
+        BackgroundTransparency=1,
+        Text="✖  Falha ao carregar módulo",
+        TextColor3=T.ERR, Font=T.FONTB, TextSize=12,
+        ZIndex=3, Parent=bg,
+    })
+    -- Separador
+    mk("Frame",{
+        Size=UDim2.new(1,-16,0,1),
+        Position=UDim2.fromOffset(8,40),
+        BackgroundColor3=T.ERR, BackgroundTransparency=0.6,
+        BorderSizePixel=0, ZIndex=3, Parent=bg,
+    })
+
+    local lines = {}
+    table.insert(lines, "Módulo : " .. name)
+    table.insert(lines, "URL    : " .. url)
+    if errHTTP    then table.insert(lines, "HTTP   : " .. tostring(errHTTP))    end
+    if errSyntax  then table.insert(lines, "Sintaxe: " .. tostring(errSyntax))  end
+    if errRuntime then table.insert(lines, "Runtime: " .. tostring(errRuntime)) end
+    table.insert(lines, "")
+    table.insert(lines, "→ Verifique se o arquivo existe no GitHub")
+    table.insert(lines, "→ Confirme que HTTP Requests está habilitado")
+
+    mk("TextLabel",{
+        Size=UDim2.new(1,-16,1,-56),
+        Position=UDim2.fromOffset(8,48),
+        BackgroundTransparency=1,
+        Text=table.concat(lines,"\n"),
+        TextColor3=T.SUBTEXT, Font=T.FONT, TextSize=9,
+        TextWrapped=true,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        TextYAlignment=Enum.TextYAlignment.Top,
+        ZIndex=3, Parent=bg,
+    })
+end
+
+-- ══════════════════════════════════════════════════════════════════════════════
+--  CARREGAR MÓDULO (lazy, com timeout)
 -- ══════════════════════════════════════════════════════════════════════════════
 local function loadModule(name, errorFrame)
-    local url = GITHUB_RAW .. name .. ".lua"
-    local raw
-    local ok1, err1 = pcall(function() raw = game:HttpGet(url, true) end)
-    local ok2, fn2  = pcall(loadstring, raw or "")
-    local ok3, res
-    if ok2 and type(fn2) == "function" then ok3, res = pcall(fn2) end
-    if ok3 and res then return res end
+    local url    = GITHUB_RAW .. name .. ".lua"
+    local raw    = nil
+    local errHTTP, errSyntax, errRuntime
 
-    if errorFrame then
-        local lines = {
-            "Falha: " .. name, "",
-            "URL: " .. url, "",
-            not ok1 and ("HTTP: "    .. tostring(err1)) or nil,
-            not ok2 and ("Sintaxe: " .. tostring(fn2))  or nil,
-            (ok2 and not ok3) and ("Runtime: " .. tostring(res)) or nil,
-            "", "Verifique o GitHub.",
-        }
-        local txt = ""
-        for _, l in ipairs(lines) do if l then txt = txt..l.."\n" end end
-        mk("TextLabel",{
-            Size=UDim2.new(1,-16,1,-16), Position=UDim2.fromOffset(8,8),
-            BackgroundTransparency=1, Text=txt, TextColor3=T.ERR,
-            Font=T.FONT, TextSize=10, TextWrapped=true,
-            TextXAlignment=Enum.TextXAlignment.Left,
-            TextYAlignment=Enum.TextYAlignment.Top, Parent=errorFrame,
-        })
+    -- HTTP com timeout manual
+    local httpDone  = false
+    local httpOk    = false
+    task.spawn(function()
+        local ok, err = pcall(function() raw = game:HttpGet(url, true) end)
+        httpOk   = ok
+        errHTTP  = not ok and err or nil
+        httpDone = true
+    end)
+    local t0 = tick()
+    while not httpDone do
+        if tick() - t0 > MODULE_TIMEOUT then
+            errHTTP  = "Timeout após " .. MODULE_TIMEOUT .. "s (verifique HTTP Requests)"
+            break
+        end
+        task.wait(0.05)
     end
-    warn("[UI] "..name.." falhou.")
+
+    -- Verifica conteúdo vazio (pode acontecer sem erro HTTP)
+    if httpOk and (not raw or raw == "") then
+        errHTTP = "Resposta vazia — arquivo não encontrado ou URL incorreta"
+        raw = nil
+    end
+
+    -- Compila
+    local fn
+    if raw then
+        local ok2, res2 = pcall(loadstring, raw)
+        if ok2 and type(res2) == "function" then
+            fn = res2
+        else
+            errSyntax = res2
+        end
+    end
+
+    -- Executa
+    local result
+    if fn then
+        local ok3, res3 = pcall(fn)
+        if ok3 then
+            result = res3
+        else
+            errRuntime = res3
+        end
+    end
+
+    if result then return result end
+
+    -- Exibe erro se tiver frame disponível
+    if errorFrame and alive(errorFrame) then
+        showModuleError(errorFrame, name, url, errHTTP, errSyntax, errRuntime)
+    end
+    warn("[UI v"..VERSION.."] Módulo '"..name.."' falhou.")
     return nil
 end
 
@@ -163,8 +325,8 @@ local SG = mk("ScreenGui",{
 
 local plat = getPlatform()
 local cfg  = PLATFORM_CFG[plat]
-local WIN_W, WIN_H   = cfg.WIN_W, cfg.WIN_H
-local SIDE_W         = cfg.SIDE_W
+local WIN_W, WIN_H    = cfg.WIN_W, cfg.WIN_H
+local SIDE_W          = cfg.SIDE_W
 local BTN_SZ, BTN_PAD = cfg.BTN, 8
 
 -- ── SOMBRA ───────────────────────────────────────────────────────────────────
@@ -190,8 +352,8 @@ local function syncShadow()
 end
 local function positionWindow()
     local vpW, vpH = getVP()
-    local nx = math.clamp((vpW-WIN_W)/2, 0, vpW-WIN_W)
-    local ny = math.clamp((vpH-WIN_H)/2, 0, vpH-WIN_H)
+    local nx = math.clamp((vpW-WIN_W)/2, 0, math.max(0, vpW-WIN_W))
+    local ny = math.clamp((vpH-WIN_H)/2, 0, math.max(0, vpH-WIN_H))
     Window.Position = UDim2.fromOffset(nx, ny)
     syncShadow()
 end
@@ -218,14 +380,14 @@ mk("Frame",{
 -- título
 mk("TextLabel",{
     Size=UDim2.new(1,-60,1,0), Position=UDim2.fromOffset(14,0),
-    BackgroundTransparency=1, Text="  Menu",
+    BackgroundTransparency=1, Text="  "..TITLE,
     TextColor3=T.TEXT, Font=T.FONTB, TextSize=cfg.TITLE_S,
     TextXAlignment=Enum.TextXAlignment.Left, ZIndex=3, Parent=Header,
 })
 -- versão
 mk("TextLabel",{
     Size=UDim2.fromOffset(52,20), Position=UDim2.new(1,-58,0.5,-10),
-    BackgroundTransparency=1, Text="v4.0",
+    BackgroundTransparency=1, Text="v"..VERSION,
     TextColor3=T.MUTED, Font=T.FONT, TextSize=9,
     TextXAlignment=Enum.TextXAlignment.Right, ZIndex=3, Parent=Header,
 })
@@ -245,7 +407,7 @@ local Sidebar = mk("Frame",{
 })
 -- cantos esquerdos arredondados (parte de baixo)
 corner(Sidebar, T.CORNER)
--- cobre cantos direitos
+-- cobre cantos direitos da sidebar
 mk("Frame",{
     Size=UDim2.new(0,14,1,0), Position=UDim2.new(1,-14,0,0),
     BackgroundColor3=T.SIDEBAR, BorderSizePixel=0, ZIndex=2, Parent=Sidebar,
@@ -264,7 +426,7 @@ local SideScroll = mk("ScrollingFrame",{
     BorderSizePixel=0,
     ScrollBarThickness=2,
     ScrollBarImageColor3=T.ACCENT,
-    CanvasSize=UDim2.new(0,0,0,0),   -- ajustado depois
+    CanvasSize=UDim2.new(0,0,0,0),
     ZIndex=3, Parent=Sidebar,
 })
 mk("UIListLayout",{
@@ -339,37 +501,42 @@ local ActiveBar = mk("Frame",{
     BorderSizePixel=0, ZIndex=5, Parent=SideScroll,
 })
 corner(ActiveBar, UDim.new(0,2))
-ActiveBar.Visible = false   -- posicionamos depois
+ActiveBar.Visible = false
 
 local function setActive(name, index)
     if activeTab == name then return end
     activeTab = name
 
-    for i, td in ipairs(TABS) do
+    for _, td in ipairs(TABS) do
         local btn = tabBtns[td.name]
         local frm = tabFrames[td.name]
         local on  = (td.name == name)
 
-        -- Fundo do botão ativo
         tw(btn, 0.14, {BackgroundColor3 = on and T.ACCENT2 or T.SIDEBAR,
                         BackgroundTransparency = on and 0 or 1})
         tw(btn, 0.14, {TextColor3 = on and T.TEXT or T.MUTED})
         if frm then frm.Visible = on end
     end
 
-    -- Move a barra indicadora para o botão ativo
+    -- Posição corrigida: desconta o scroll atual do CanvasPosition
     if tabBtns[name] then
-        local btn = tabBtns[name]
-        ActiveBar.Visible = true
-        ActiveBar.Position = UDim2.fromOffset(
-            0,
-            btn.Position.Y.Offset + 4
-        )
-        tw(ActiveBar, 0.15, {
-            Position = UDim2.fromOffset(0, btn.Position.Y.Offset + 4)
-        })
+        local btn      = tabBtns[name]
+        local scrollY  = SideScroll.CanvasPosition.Y
+        local targetY  = btn.Position.Y.Offset - scrollY + 4
+        ActiveBar.Visible  = true
+        ActiveBar.Position = UDim2.fromOffset(0, targetY)
+        tw(ActiveBar, 0.15, { Position = UDim2.fromOffset(0, targetY) })
     end
 end
+
+-- Atualiza a barra quando o usuário scrolla a sidebar
+SideScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+    if activeTab and tabBtns[activeTab] then
+        local btn     = tabBtns[activeTab]
+        local scrollY = SideScroll.CanvasPosition.Y
+        ActiveBar.Position = UDim2.fromOffset(0, btn.Position.Y.Offset - scrollY + 4)
+    end
+end)
 
 for i, td in ipairs(TABS) do
     -- Botão da sidebar
@@ -390,10 +557,11 @@ for i, td in ipairs(TABS) do
     corner(btn, T.CORNER_XS)
     tabBtns[td.name] = btn
 
-    -- Frame de conteúdo
+    -- Frame de conteúdo — tamanho explícito para garantir que o módulo renderize
     local frm = mk("Frame",{
         Size=UDim2.fromScale(1,1),
         BackgroundTransparency=1,
+        ClipsDescendants=true,
         Visible=false, ZIndex=1, Parent=ContentArea,
     })
     tabFrames[td.name] = frm
@@ -414,17 +582,21 @@ for i, td in ipairs(TABS) do
     btn.Activated:Connect(function()
         if td.module and not tabLoaded[td.name] then
             tabLoaded[td.name] = true
-            local loading = mk("TextLabel",{
-                Size=UDim2.fromScale(1,1),
-                BackgroundTransparency=1,
-                Text="Carregando "..td.name.."...",
-                TextColor3=T.MUTED, Font=T.FONT, TextSize=11,
-                ZIndex=2, Parent=frm,
-            })
+
+            -- Spinner enquanto carrega
+            local spinHolder, spinConn = makeSpinner(frm, td.name)
+
             task.spawn(function()
                 local mod = loadModule(td.module, frm)
-                loading:Destroy()
-                if mod and mod.Init then pcall(mod.Init, frm, T, Registry) end
+
+                -- Para o spinner
+                spinConn:Disconnect()
+                if alive(spinHolder) then spinHolder:Destroy() end
+
+                -- Só inicializa se o frame ainda existir e a UI não foi fechada
+                if mod and mod.Init and alive(frm) and not Registry.closed then
+                    pcall(mod.Init, frm, T, Registry)
+                end
             end)
         end
         setActive(td.name, i)
@@ -445,9 +617,19 @@ end
 do
     local first = TABS[1]
     tabLoaded[first.name] = true
+
+    local spinHolder, spinConn = makeSpinner(tabFrames[first.name], first.name)
+
     task.spawn(function()
-        local mod = loadModule(first.module, tabFrames[first.name])
-        if mod and mod.Init then pcall(mod.Init, tabFrames[first.name], T, Registry) end
+        local frm = tabFrames[first.name]
+        local mod = loadModule(first.module, frm)
+
+        spinConn:Disconnect()
+        if alive(spinHolder) then spinHolder:Destroy() end
+
+        if mod and mod.Init and alive(frm) and not Registry.closed then
+            pcall(mod.Init, frm, T, Registry)
+        end
     end)
     setActive(first.name, 1)
 end
@@ -467,6 +649,7 @@ end)
 local minimized = false
 local function setMin(s)
     minimized = s
+    local targetH = s and cfg.HDR_H or WIN_H
     if s then
         tw(Window, 0.2, {Size=UDim2.fromOffset(WIN_W, cfg.HDR_H)})
     else
@@ -479,8 +662,8 @@ ToggleBtn.Activated:Connect(function() setMin(not minimized) end)
 
 ResetBtn.Activated:Connect(function()
     local vpW, vpH = getVP()
-    local nx = math.clamp((vpW-WIN_W)/2, 0, vpW-WIN_W)
-    local ny = math.clamp((vpH-WIN_H)/2, 0, vpH-WIN_H)
+    local nx = math.clamp((vpW-WIN_W)/2, 0, math.max(0, vpW-WIN_W))
+    local ny = math.clamp((vpH-WIN_H)/2, 0, math.max(0, vpH-WIN_H))
     tw(Window, 0.3, {Position=UDim2.fromOffset(nx, ny)})
     task.delay(0.01, function()
         local c; c = RunService.RenderStepped:Connect(function()
@@ -495,25 +678,35 @@ end)
 --  DRAG  (RenderStepped só durante o arraste)
 -- ══════════════════════════════════════════════════════════════════════════════
 do
-    local dragging, startPos, startWin, dragConn =
-          false, Vector2.zero, Vector2.zero, nil
+    local dragging, startPos, startWin = false, Vector2.zero, Vector2.zero
+    local dragConn = nil
+
+    local function endDrag()
+        dragging = false
+        if dragConn then
+            dragConn:Disconnect()
+            dragConn = nil
+        end
+    end
 
     local function beginDrag(pos)
+        if minimized then return end   -- não arrastar quando minimizado
+        if dragConn then dragConn:Disconnect(); dragConn = nil end
         dragging = true
         startPos = Vector2.new(pos.X, pos.Y)
         startWin = Vector2.new(Window.Position.X.Offset, Window.Position.Y.Offset)
         dragConn = RunService.RenderStepped:Connect(function()
-            if not dragging then dragConn:Disconnect(); dragConn=nil; return end
+            if not dragging then endDrag() return end
             local mp = UIS:GetMouseLocation()
+            local curH = minimized and cfg.HDR_H or WIN_H
             local nx, ny = clampWin(
                 startWin.X + mp.X - startPos.X,
                 startWin.Y + mp.Y - startPos.Y,
-                WIN_W, WIN_H)
+                WIN_W, curH)
             Window.Position = UDim2.fromOffset(nx, ny)
             syncShadow()
         end)
     end
-    local function endDrag() dragging = false end
 
     Header.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1
@@ -540,20 +733,27 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  RESPONSIVIDADE
+--  RESPONSIVIDADE  (conexão desconectada no close via Registry)
 -- ══════════════════════════════════════════════════════════════════════════════
 local lastPlat = plat
-workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+local vpConn = workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    if not alive(SG) then return end
+
     local newPlat = getPlatform()
     if newPlat ~= lastPlat then
         lastPlat = newPlat
         local nc = PLATFORM_CFG[newPlat]
         WIN_W, WIN_H, SIDE_W, BTN_SZ = nc.WIN_W, nc.WIN_H, nc.SIDE_W, nc.BTN
-        Window.Size   = UDim2.fromOffset(WIN_W, WIN_H)
-        Shadow.Size   = UDim2.fromOffset(WIN_W+24, WIN_H+24)
-        Header.Size   = UDim2.new(1,0,0,nc.HDR_H)
-        Sidebar.Size  = UDim2.new(0,SIDE_W,1,-nc.HDR_H)
-        Sidebar.Position = UDim2.new(0,0,0,nc.HDR_H)
+        cfg = nc
+        if not minimized then
+            Window.Size = UDim2.fromOffset(WIN_W, WIN_H)
+        else
+            Window.Size = UDim2.fromOffset(WIN_W, nc.HDR_H)
+        end
+        Shadow.Size          = UDim2.fromOffset(WIN_W+24, WIN_H+24)
+        Header.Size          = UDim2.new(1,0,0,nc.HDR_H)
+        Sidebar.Size         = UDim2.new(0,SIDE_W,1,-nc.HDR_H)
+        Sidebar.Position     = UDim2.new(0,0,0,nc.HDR_H)
         ContentArea.Size     = UDim2.new(1,-SIDE_W,1,-nc.HDR_H)
         ContentArea.Position = UDim2.new(0,SIDE_W,0,nc.HDR_H)
         for row, btn in ipairs({CloseBtn,ToggleBtn,ResetBtn}) do
@@ -561,23 +761,31 @@ workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(functio
             btn.Position = UDim2.fromOffset(BTN_PAD, BTN_PAD+(BTN_SZ+6)*(row-1))
         end
     end
+    local curH = minimized and cfg.HDR_H or WIN_H
     local px, py = Window.Position.X.Offset, Window.Position.Y.Offset
-    local nx, ny = clampWin(px, py, WIN_W, WIN_H)
+    local nx, ny = clampWin(px, py, WIN_W, curH)
     Window.Position = UDim2.fromOffset(nx, ny)
     syncShadow()
 end)
 
+-- Garante desconexão da ViewportSize ao fechar
+Registry.onClose(function()
+    vpConn:Disconnect()
+end)
+
 -- ══════════════════════════════════════════════════════════════════════════════
---  RECUPERAÇÃO AUTOMÁTICA
+--  RECUPERAÇÃO AUTOMÁTICA (usa snapshot local das dimensões)
 -- ══════════════════════════════════════════════════════════════════════════════
 task.spawn(function()
-    while SG.Parent do
+    while alive(SG) do
         task.wait(5)
+        if not alive(SG) then break end
         if not minimized then
+            local snapW, snapH = WIN_W, WIN_H   -- snapshot thread-safe
             local vpW, vpH = getVP()
             local px, py = Window.Position.X.Offset, Window.Position.Y.Offset
-            if px>vpW-30 or px+WIN_W<30 or py>vpH-30 or py+WIN_H<30 then
-                local nx, ny = clampWin(px, py, WIN_W, WIN_H)
+            if px > vpW-30 or px+snapW < 30 or py > vpH-30 or py+snapH < 30 then
+                local nx, ny = clampWin(px, py, snapW, snapH)
                 tw(Window, 0.4, {Position=UDim2.fromOffset(nx, ny)})
                 syncShadow()
             end
